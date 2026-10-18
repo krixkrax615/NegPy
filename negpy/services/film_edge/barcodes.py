@@ -59,6 +59,6 @@ def code128c_bits(digits: str) -> tuple[int, ...]:
 def keykode_bits(code: str, roll: str, foot: int, perforations: int) -> tuple[int, ...]:
     """KEYKODE barcode: maker, product, the key's 6-digit roll prefix and 4-digit foot count, perforation offset."""
     maker = _KEYKODE_MAKERS.get(code[:1], 2)
-    # ponytail: stand-in product number from the film letter; the real one is the maker's own table.
+    # A stand-in product number from the film letter; the real one is in the maker's own table.
     product = (ord(code[1:2] or "A") - ord("A")) % 100
     return code128c_bits(f"{maker:02d}{product:02d}{roll}{foot % 10000:04d}{perforations:02d}")
