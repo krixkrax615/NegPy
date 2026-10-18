@@ -7,7 +7,13 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Professional color negative; fine T-grain, neutral with slight warmth, exceptional skin tones, wide latitude that shifts pastel when overexposed."
+    "notes": "Professional color negative; fine T-grain, neutral with slight warmth, exceptional skin tones, wide latitude that shifts pastel when overexposed.",
+    "edge": {
+      "style": "kodak",
+      "text": "PORTRA 400",
+      "dx": "95-13",
+      "source": "text: havecamerawilltravel.com Kodak edge codes; DX: Big Film Database (Portra 400, 2010)"
+    }
   },
   {
     "id": "film-portra-160",
@@ -17,7 +23,13 @@
     "iso": 160,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Professional color negative; ultra-fine T-grain, very neutral with refined saturation and a gentle highlight rolloff; the studio portrait standard."
+    "notes": "Professional color negative; ultra-fine T-grain, very neutral with refined saturation and a gentle highlight rolloff; the studio portrait standard.",
+    "edge": {
+      "style": "kodak",
+      "text": "PORTRA 160",
+      "dx": "95-14",
+      "source": "text: havecamerawilltravel.com Kodak edge codes; DX: Big Film Database (Portra 160, 2011)"
+    }
   },
   {
     "id": "film-ektacolor-pro-800",
@@ -27,7 +39,12 @@
     "iso": 800,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Professional color negative; remarkably fine T-grain for its speed, neutral, subdued saturation, extraordinary skin tones."
+    "notes": "Professional color negative; remarkably fine T-grain for its speed, neutral, subdued saturation, extraordinary skin tones.",
+    "edge": {
+      "style": "kodak",
+      "text": "PORTRA 800",
+      "source": "text: havecamerawilltravel.com Kodak edge codes"
+    }
   },
   {
     "id": "film-gold-200",
@@ -37,7 +54,13 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Consumer color negative; cubic grain, warm bias with amber highlights, olive greens and teal-leaning shadows."
+    "notes": "Consumer color negative; cubic grain, warm bias with amber highlights, olive greens and teal-leaning shadows.",
+    "edge": {
+      "style": "kodak",
+      "text": "GB 200",
+      "dx": "96-12",
+      "source": "text and DX: Big Film Database (Gold 200 GB 200-7)"
+    }
   },
   {
     "id": "film-tri-x-400",
@@ -47,7 +70,13 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Classic cubic-grain B&W; Kodak shoulder rolloff, rich midtone separation, grain that clumps when pushed."
+    "notes": "Classic cubic-grain B&W; Kodak shoulder rolloff, rich midtone separation, grain that clumps when pushed.",
+    "edge": {
+      "style": "kodak",
+      "text": "400TX",
+      "dx": "64-5",
+      "source": "text: Kodak PG-118 via jeffreysward.com; DX: Big Film Database (Tri-X 400TX)"
+    }
   },
   {
     "id": "film-ektapan-100",
@@ -57,7 +86,13 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Ultra-fine T-grain B&W; extended toe for shadow detail, clean linear rendering with little shoulder."
+    "notes": "Ultra-fine T-grain B&W; extended toe for shadow detail, clean linear rendering with little shoulder.",
+    "edge": {
+      "style": "kodak",
+      "text": "100TMX",
+      "dx": "67-7",
+      "source": "text: Kodak PG-118 via jeffreysward.com; DX: Big Film Database (T-Max 100 100TMX)"
+    }
   },
   {
     "id": "film-ektapan-400",
@@ -67,7 +102,12 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Fine T-grain B&W; finer and more linear than Tri-X, grain keeps its structure when pushed."
+    "notes": "Fine T-grain B&W; finer and more linear than Tri-X, grain keeps its structure when pushed.",
+    "edge": {
+      "style": "kodak",
+      "text": "400TMY",
+      "source": "text: Kodak PG-118 via jeffreysward.com"
+    }
   },
   {
     "id": "film-ektapan-p3200",
@@ -77,7 +117,13 @@
     "iso": 3200,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "High-speed T-grain B&W designed to be push processed; visible grain, punchy contrast."
+    "notes": "High-speed T-grain B&W designed to be push processed; visible grain, punchy contrast.",
+    "edge": {
+      "style": "kodak",
+      "text": "P3200TMZ",
+      "dx": "67-9",
+      "source": "text: Kodak PG-118 via jeffreysward.com; DX: Big Film Database (T-Max P3200, 2018)"
+    }
   },
   {
     "id": "film-hp5-400",
@@ -87,7 +133,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Classic cubic-grain B&W; more linear than Tri-X with less shoulder, defined grain, wide latitude, pushes well."
+    "notes": "Classic cubic-grain B&W; more linear than Tri-X with less shoulder, defined grain, wide latitude, pushes well.",
+    "edge": {
+      "dx": "109-9",
+      "source": "DX: Big Film Database (HP5 Plus)"
+    }
   },
   {
     "id": "film-fp4-125",
@@ -97,7 +147,11 @@
     "iso": 125,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Medium-speed cubic-grain B&W; fine grain, smooth gradation from highlight to shadow."
+    "notes": "Medium-speed cubic-grain B&W; fine grain, smooth gradation from highlight to shadow.",
+    "edge": {
+      "dx": "109-12",
+      "source": "DX: Big Film Database (FP4 Plus)"
+    }
   },
   {
     "id": "film-delta-100",
@@ -107,7 +161,11 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Core-shell tabular grain, fine grain and high sharpness."
+    "notes": "Core-shell tabular grain, fine grain and high sharpness.",
+    "edge": {
+      "dx": "109-15",
+      "source": "DX: Big Film Database (Delta 100 Professional)"
+    }
   },
   {
     "id": "film-delta-400",
@@ -117,7 +175,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Core-shell tabular grain, fine grain and high sharpness."
+    "notes": "Core-shell tabular grain, fine grain and high sharpness.",
+    "edge": {
+      "dx": "109-8",
+      "source": "DX: Big Film Database (Delta 400 Pro)"
+    }
   },
   {
     "id": "film-delta-3200",
@@ -127,7 +189,11 @@
     "iso": 3200,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "True speed ~1000, designed to be push processed."
+    "notes": "True speed ~1000, designed to be push processed.",
+    "edge": {
+      "dx": "108-10",
+      "source": "DX: Big Film Database (Delta 3200 Professional)"
+    }
   },
   {
     "id": "film-panf-50",
@@ -137,7 +203,11 @@
     "iso": 50,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Ultra-fine cubic grain, the finest of Ilford's traditional emulsions; narrow latitude."
+    "notes": "Ultra-fine cubic grain, the finest of Ilford's traditional emulsions; narrow latitude.",
+    "edge": {
+      "dx": "109-13",
+      "source": "DX: Big Film Database (Pan F Plus)"
+    }
   },
   {
     "id": "film-xp2-400",
@@ -147,7 +217,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Chromogenic B&W on a C-41 process; dye-cloud grain that smooths with overexposure, very wide latitude."
+    "notes": "Chromogenic B&W on a C-41 process; dye-cloud grain that smooths with overexposure, very wide latitude.",
+    "edge": {
+      "dx": "110-4",
+      "source": "DX: Big Film Database (XP2 Super)"
+    }
   },
   {
     "id": "film-sfx-200",
@@ -157,7 +231,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Extended red sensitivity to ~740nm, near-infrared effects with a red filter."
+    "notes": "Extended red sensitivity to ~740nm, near-infrared effects with a red filter.",
+    "edge": {
+      "dx": "108-7",
+      "source": "DX: Big Film Database (SFX200, 2007)"
+    }
   },
   {
     "id": "film-kentmere-100",
@@ -167,7 +245,11 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Budget cubic-grain B&W from Harman; FP4-class technology with less silver."
+    "notes": "Budget cubic-grain B&W from Harman; FP4-class technology with less silver.",
+    "edge": {
+      "dx": "110-10",
+      "source": "DX: Big Film Database (Kentmere Pan 100)"
+    }
   },
   {
     "id": "film-kentmere-200",
@@ -187,7 +269,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Budget cubic-grain B&W from Harman; HP5-class technology with less silver."
+    "notes": "Budget cubic-grain B&W from Harman; HP5-class technology with less silver.",
+    "edge": {
+      "dx": "110-10",
+      "source": "DX: Big Film Database (Kentmere Pan 400)"
+    }
   },
   {
     "id": "film-ektachrome-e100",
@@ -207,7 +293,11 @@
     "iso": 800,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 500T with the remjet removed; tungsten balanced, daylight goes teal, red halation around bright lights."
+    "notes": "Vision3 500T with the remjet removed; tungsten balanced, daylight goes teal, red halation around bright lights.",
+    "edge": {
+      "printsAs": "film-vision3-500t-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-vision3-250d-remjet",
@@ -217,7 +307,14 @@
     "iso": 250,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Motion picture stock, daylight balanced. With remjet layer."
+    "notes": "Motion picture stock, daylight balanced. With remjet layer.",
+    "edge": {
+      "style": "cine",
+      "maker": "EASTMAN",
+      "text": "5207",
+      "code": "EN",
+      "source": "Kodak KEYKODE diagrams"
+    }
   },
   {
     "id": "film-vision3-250d-ahu",
@@ -237,7 +334,14 @@
     "iso": 500,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Motion picture stock, tungsten balanced. With remjet layer."
+    "notes": "Motion picture stock, tungsten balanced. With remjet layer.",
+    "edge": {
+      "style": "cine",
+      "maker": "EASTMAN",
+      "text": "5219",
+      "code": "EJ",
+      "source": "Kodak KEYKODE diagrams"
+    }
   },
   {
     "id": "film-vision3-500t-ahu",
@@ -257,7 +361,14 @@
     "iso": 250,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Motion picture panchromatic negative; medium-coarse cubic grain, high contrast."
+    "notes": "Motion picture panchromatic negative; medium-coarse cubic grain, high contrast.",
+    "edge": {
+      "style": "cine",
+      "maker": "EASTMAN",
+      "text": "5222",
+      "code": "KE",
+      "source": "Kodak KEYKODE diagrams"
+    }
   },
   {
     "id": "film-kodak-ektar-100",
@@ -267,7 +378,12 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Color negative; ultra-fine T-grain, extreme saturation, neutral-cool with reds that push magenta, unflattering to skin, tight latitude."
+    "notes": "Color negative; ultra-fine T-grain, extreme saturation, neutral-cool with reds that push magenta, unflattering to skin, tight latitude.",
+    "edge": {
+      "style": "kodak",
+      "text": "EKTAR 100",
+      "source": "text: havecamerawilltravel.com Kodak edge codes"
+    }
   },
   {
     "id": "film-kodak-ultramax-400",
@@ -277,7 +393,13 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Consumer color negative; T-grain, warm, punchy and saturated, higher contrast than Gold."
+    "notes": "Consumer color negative; T-grain, warm, punchy and saturated, higher contrast than Gold.",
+    "edge": {
+      "style": "kodak",
+      "text": "GC 400",
+      "dx": "95-7",
+      "source": "text and DX: Big Film Database (Ultra Max 400 GC400)"
+    }
   },
   {
     "id": "film-kodak-colorplus-200",
@@ -287,7 +409,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Budget consumer color negative; coarser cubic grain, warm but less controlled than Gold, narrow latitude."
+    "notes": "Budget consumer color negative; coarser cubic grain, warm but less controlled than Gold, narrow latitude.",
+    "edge": {
+      "dx": "79-7",
+      "source": "DX: Big Film Database (Color Plus 200)"
+    }
   },
   {
     "id": "film-kodak-pro-image-100",
@@ -307,7 +433,11 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Consumer color negative; parentage contested between Pro Image 100 and the Kodacolor VR line."
+    "notes": "Consumer color negative; parentage contested between Pro Image 100 and the Kodacolor VR line.",
+    "edge": {
+      "dx": "91-1",
+      "source": "DX: Big Film Database (Kodacolor 100, 2025)"
+    }
   },
   {
     "id": "film-kodak-kodacolor-200",
@@ -327,7 +457,14 @@
     "iso": 50,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Motion picture stock, daylight balanced. With remjet layer."
+    "notes": "Motion picture stock, daylight balanced. With remjet layer.",
+    "edge": {
+      "style": "cine",
+      "maker": "EASTMAN",
+      "text": "5203",
+      "code": "ER",
+      "source": "Kodak KEYKODE diagrams"
+    }
   },
   {
     "id": "film-vision3-200t-remjet",
@@ -337,7 +474,13 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Motion picture stock, tungsten balanced. With remjet layer."
+    "notes": "Motion picture stock, tungsten balanced. With remjet layer.",
+    "edge": {
+      "style": "cine",
+      "maker": "EASTMAN",
+      "text": "5213",
+      "source": "Kodak KEYKODE diagrams"
+    }
   },
   {
     "id": "film-fujifilm-200",
@@ -347,7 +490,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Kodak-made consumer color negative; Gold 200 in all observed behaviour: cubic grain, warm bias, amber push, teal shadows."
+    "notes": "Kodak-made consumer color negative; Gold 200 in all observed behaviour: cubic grain, warm bias, amber push, teal shadows.",
+    "edge": {
+      "dx": "39-1",
+      "source": "DX: Big Film Database (Fujifilm 200, made in USA)"
+    }
   },
   {
     "id": "film-fujifilm-400",
@@ -377,7 +524,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Fuji-made consumer color negative; fine tabular grain, bright, low contrast, mint greens, cool pleasant skin."
+    "notes": "Fuji-made consumer color negative; fine tabular grain, bright, low contrast, mint greens, cool pleasant skin.",
+    "edge": {
+      "dx": "39-3",
+      "source": "DX: Big Film Database (Superia Premium 400)"
+    }
   },
   {
     "id": "film-fujifilm-fujicolor-100",
@@ -397,7 +548,13 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "ColorSlide",
-    "notes": "Slide film; ultra-fine grain, realistic color with a slight vibrancy lift, true greens, deep clean blues, good skin tones."
+    "notes": "Slide film; ultra-fine grain, realistic color with a slight vibrancy lift, true greens, deep clean blues, good skin tones.",
+    "edge": {
+      "style": "fuji",
+      "code": "RDPIII",
+      "dx": "34-13",
+      "source": "code: Fujifilm type code, printed per the Professional Data Guide 2005; DX: Big Film Database (Provia 100F RDPII)"
+    }
   },
   {
     "id": "film-fujifilm-velvia-50",
@@ -407,7 +564,13 @@
     "iso": 50,
     "format": "35mm",
     "colorType": "ColorSlide",
-    "notes": "Slide film; ultra-fine grain, extreme saturation across the spectrum, high contrast with hard clipping, unforgiving of skin tones."
+    "notes": "Slide film; ultra-fine grain, extreme saturation across the spectrum, high contrast with hard clipping, unforgiving of skin tones.",
+    "edge": {
+      "style": "fuji",
+      "code": "RVP50",
+      "dx": "32-6",
+      "source": "code: Fujifilm type code, printed per the Professional Data Guide 2005; DX: Big Film Database (Velvia 50)"
+    }
   },
   {
     "id": "film-fujifilm-velvia-100",
@@ -417,7 +580,13 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "ColorSlide",
-    "notes": "Slide film; ultra-fine grain, even more saturated than Velvia 50 with harsher transitions."
+    "notes": "Slide film; ultra-fine grain, even more saturated than Velvia 50 with harsher transitions.",
+    "edge": {
+      "style": "fuji",
+      "code": "RVP100",
+      "dx": "32-11",
+      "source": "code: Fujifilm type code, printed per the Professional Data Guide 2005; DX: Big Film Database (Velvia 100, 2003)"
+    }
   },
   {
     "id": "film-fujifilm-neopan-acros-ii-100",
@@ -437,7 +606,11 @@
     "iso": 80,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Orthochromatic fine-grain B&W, blind to red: reds print dark, skies light."
+    "notes": "Orthochromatic fine-grain B&W, blind to red: reds print dark, skies light.",
+    "edge": {
+      "dx": "109-14",
+      "source": "DX: Big Film Database (Ortho Plus, 2019)"
+    }
   },
   {
     "id": "film-harman-phoenix-ii-200",
@@ -447,7 +620,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Harman's own color negative with no orange mask; visible grain, high saturation and contrast, warm bias, narrow latitude."
+    "notes": "Harman's own color negative with no orange mask; visible grain, high saturation and contrast, warm bias, narrow latitude.",
+    "edge": {
+      "dx": "105-3",
+      "source": "DX: Big Film Database (Phoenix II, 2025)"
+    }
   },
   {
     "id": "film-harman-red-125",
@@ -457,7 +634,11 @@
     "iso": 125,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Redscale color negative on Phoenix technology, exposed through the base; heavy warm-red shift, no orange mask."
+    "notes": "Redscale color negative on Phoenix technology, exposed through the base; heavy warm-red shift, no orange mask.",
+    "edge": {
+      "dx": "105-1",
+      "source": "DX: Big Film Database (Harman Red 125)"
+    }
   },
   {
     "id": "film-cinestill-400d",
@@ -477,7 +658,11 @@
     "iso": 50,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 50D with the remjet removed; ultra-fine cinema T-grain, low saturation, pastel palette, minimal halation."
+    "notes": "Vision3 50D with the remjet removed; ultra-fine cinema T-grain, low saturation, pastel palette, minimal halation.",
+    "edge": {
+      "printsAs": "film-vision3-50d-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-cinestill-bwxx",
@@ -487,7 +672,11 @@
     "iso": 250,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Kodak Double-X 5222 cinema stock; medium-coarse cubic grain, high contrast with deep blacks and compressed midtones."
+    "notes": "Kodak Double-X 5222 cinema stock; medium-coarse cubic grain, high contrast with deep blacks and compressed midtones.",
+    "edge": {
+      "printsAs": "film-double-x-250",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-reto-amber-800",
@@ -497,7 +686,11 @@
     "iso": 800,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 500T with the remjet removed; tungsten balanced, teal daylight cast, red halation."
+    "notes": "Vision3 500T with the remjet removed; tungsten balanced, teal daylight cast, red halation.",
+    "edge": {
+      "printsAs": "film-vision3-500t-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-reto-amber-d400",
@@ -507,7 +700,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 250D with the remjet removed; daylight balanced, soft muted palette with brown-leaning shadows."
+    "notes": "Vision3 250D with the remjet removed; daylight balanced, soft muted palette with brown-leaning shadows.",
+    "edge": {
+      "printsAs": "film-vision3-250d-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-reto-amber-d100",
@@ -517,7 +714,11 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 50D with the remjet removed; daylight balanced, fine grain, cool blue cast, rich saturation."
+    "notes": "Vision3 50D with the remjet removed; daylight balanced, fine grain, cool blue cast, rich saturation.",
+    "edge": {
+      "printsAs": "film-vision3-50d-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-reto-retocolor-aqua-400",
@@ -627,7 +828,11 @@
     "iso": 50,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 50D with the remjet intact; daylight balanced, ECN-2."
+    "notes": "Vision3 50D with the remjet intact; daylight balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-50d-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-silbersalz35-200t",
@@ -637,7 +842,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 200T with the remjet intact; tungsten balanced, ECN-2."
+    "notes": "Vision3 200T with the remjet intact; tungsten balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-200t-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-silbersalz35-250d",
@@ -647,7 +856,11 @@
     "iso": 250,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 250D with the remjet intact; daylight balanced, ECN-2."
+    "notes": "Vision3 250D with the remjet intact; daylight balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-250d-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-silbersalz35-500t",
@@ -657,7 +870,11 @@
     "iso": 500,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 500T with the remjet intact; tungsten balanced, ECN-2."
+    "notes": "Vision3 500T with the remjet intact; tungsten balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-500t-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-flic-film-cine-colour-50d",
@@ -667,7 +884,11 @@
     "iso": 50,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 50D with the remjet intact; daylight balanced, ECN-2."
+    "notes": "Vision3 50D with the remjet intact; daylight balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-50d-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-flic-film-cine-colour-200t",
@@ -677,7 +898,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 200T with the remjet intact; tungsten balanced, ECN-2."
+    "notes": "Vision3 200T with the remjet intact; tungsten balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-200t-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-flic-film-cine-colour-250d",
@@ -687,7 +912,11 @@
     "iso": 250,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 250D with the remjet intact; daylight balanced, ECN-2."
+    "notes": "Vision3 250D with the remjet intact; daylight balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-250d-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-flic-film-cine-colour-500t",
@@ -697,7 +926,11 @@
     "iso": 500,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 500T with the remjet intact; tungsten balanced, ECN-2."
+    "notes": "Vision3 500T with the remjet intact; tungsten balanced, ECN-2.",
+    "edge": {
+      "printsAs": "film-vision3-500t-remjet",
+      "source": "respooled Kodak cine stock, which keeps Kodak's edge print"
+    }
   },
   {
     "id": "film-flic-film-elektra-100",
@@ -857,7 +1090,11 @@
     "iso": 800,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "High-speed color negative; fine grain for its speed, warm with magenta-pink highlights and cyan-blue shadows."
+    "notes": "High-speed color negative; fine grain for its speed, warm with magenta-pink highlights and cyan-blue shadows.",
+    "edge": {
+      "dx": "97-10",
+      "source": "DX: Big Film Database (Color Negative 800, film DX barcode)"
+    }
   },
   {
     "id": "film-lomography-cn-100",
@@ -867,7 +1104,11 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Kodak consumer-family color negative; visible traditional grain, warm muted 1980s palette with more vibrancy than Gold."
+    "notes": "Kodak consumer-family color negative; visible traditional grain, warm muted 1980s palette with more vibrancy than Gold.",
+    "edge": {
+      "dx": "87-11",
+      "source": "DX: Big Film Database (Color Negative 100)"
+    }
   },
   {
     "id": "film-lomography-cn-400",
@@ -1147,7 +1388,11 @@
     "iso": 100,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Budget cubic-grain B&W; slightly coarser than FP4 Plus."
+    "notes": "Budget cubic-grain B&W; slightly coarser than FP4 Plus.",
+    "edge": {
+      "dx": "87-3",
+      "source": "DX: Big Film Database (Fomapan 100 Classic)"
+    }
   },
   {
     "id": "film-foma-fomapan-200-creative",
@@ -1157,7 +1402,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Budget B&W with T-crystal grain; moderate grain and contrast."
+    "notes": "Budget B&W with T-crystal grain; moderate grain and contrast.",
+    "edge": {
+      "dx": "87-6",
+      "source": "DX: Big Film Database (Fomapan 200 Creative)"
+    }
   },
   {
     "id": "film-foma-fomapan-400-action",
@@ -1167,7 +1416,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Budget B&W; coarse cubic grain, more prominent than HP5 Plus or Tri-X."
+    "notes": "Budget B&W; coarse cubic grain, more prominent than HP5 Plus or Tri-X.",
+    "edge": {
+      "dx": "87-7",
+      "source": "DX: Big Film Database (Fomapan 400 Action)"
+    }
   },
   {
     "id": "film-foma-ortho-400",
@@ -1297,7 +1550,11 @@
     "iso": 80,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Aviphot Pan 80 aerial emulsion on a clear base; ultra-fine grain, super-panchromatic into the near infrared."
+    "notes": "Aviphot Pan 80 aerial emulsion on a clear base; ultra-fine grain, super-panchromatic into the near infrared.",
+    "edge": {
+      "dx": "108-5",
+      "source": "DX: Big Film Database (Retro 80S)"
+    }
   },
   {
     "id": "film-rollei-retro-400s",

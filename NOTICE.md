@@ -51,3 +51,14 @@ traces of the Kodak VISION3 50D, 200T, 250D and 500T dye curves (H-1-5203,
 H-1-5207, H-1-5213, H-1-5219), resampled to 5 nm, under the same license. The
 Kodak consumer and VERITA 200D crosstalk estimates in crosstalk/ are fitted with
 it.
+
+The DX numbers and the Kodak Gold and Ultra Max edge codes in the `edge` entries
+of gear/film_stocks.json come from The Big Film Database (dxdatabase) © 2018 by
+Dxdatabase, licensed CC BY-SA 4.0:
+
+  https://github.com/dxdatabase/Open-source-film-database
+  https://thebigfilmdatabase.merinorus.com/
+
+Modified by NegPy: each four-digit DX number is split into the part 1 and part 2
+of the film edge barcode. NegPy distributes them under the GPL v3, which
+Creative Commons lists as a BY-SA compatible license.

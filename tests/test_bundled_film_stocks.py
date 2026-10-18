@@ -5,6 +5,8 @@ import pytest
 from negpy.features.metadata.gear_models import FilmColorType, FilmStock, GearLibrary
 from negpy.services.assets.gear import GearProfiles
 from negpy.services.assets.gear_match import match_gear_for_folder
+from negpy.services.film_edge.edge import edge_style, parse_dx
+from negpy.services.film_edge.layouts import LAYOUTS
 
 
 @pytest.fixture(scope="module")
@@ -37,6 +39,26 @@ def test_the_film_label_never_doubles_the_maker(stocks):
     for stock in stocks:
         words = stock.full_film_label.split()
         assert words[0] != words[1], stock.full_film_label
+
+
+def test_edge_data_is_sourced_and_reads_as_edge_print(stocks, library):
+    edged = [s for s in stocks if s.edge is not None]
+    assert len(edged) > 40
+    for stock in edged:
+        edge = stock.edge
+        assert edge.source, stock.id
+        assert not edge.style or edge.style in LAYOUTS, stock.id
+        assert not edge.dx or parse_dx(edge.dx), stock.id
+        if edge.prints_as:
+            source = library.get_film_stock(edge.prints_as)
+            assert source is not None and source.edge is not None and not source.edge.prints_as, stock.id
+        style = edge_style(stock, library)
+        assert style.text.isascii() and style.text == style.text.upper(), stock.id
+
+
+def test_a_renamed_kodak_stock_prints_its_legacy_mark(library):
+    assert edge_style(library.get_film_stock("film-portra-400"), library).text == "PORTRA 400"
+    assert edge_style(library.get_film_stock("film-ektapan-400"), library).text == "400TMY"
 
 
 @pytest.mark.parametrize(
