@@ -78,6 +78,7 @@ Actions with no default key are not listed; every one of them can still be bound
 | `Ctrl + Shift + L` | Dock session and controls panels |
 | `Shift + H` | Hide or show both side panels |
 | `Shift + G` | Light Table: the roll as a grid in place of the canvas |
+| `F6` | Filmstrip: the roll as a row of thumbnails under the canvas |
 | `Shift + R` | Reference view: pin this frame beside the canvas to match others to it |
 | `0` | Fit to window |
 | `1` | Zoom 100% |

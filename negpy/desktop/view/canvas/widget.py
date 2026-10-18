@@ -280,6 +280,12 @@ class ImageCanvas(QWidget):
             self.pan_offset = QPointF(0, 0)
         self._sync_transform()
 
+    def set_view(self, zoom: float, pan_x: float, pan_y: float) -> None:
+        """Zoom and pan (image shift as a fraction of the viewport), for a view linked to this one."""
+        self.zoom_level = clamp_canvas_zoom_level(zoom)
+        self.pan_offset = QPointF(pan_x, pan_y) if self.zoom_level > 1.0 else QPointF(0, 0)
+        self._sync_transform()
+
     def _image_dims(self) -> Optional[Tuple[int, int]]:
         """Current rendered image size as (width, height), or None if nothing is shown."""
         buf = self.state.canvas_value("base_positive")
@@ -327,6 +333,14 @@ class ImageCanvas(QWidget):
             return 1.0
         return long_edge / source_edge
 
+    #: The full-resolution render is worth its cost once the view puts this many screen pixels on one preview pixel.
+    HQ_UPGRADE_MAGNIFICATION = 1.5
+
+    def needs_full_res(self) -> bool:
+        """True when the frame rendered against a downscaled preview and the view now magnifies it."""
+        fit = self._fit_scale()
+        return fit is not None and self._source_scale() < 1.0 and self.zoom_level * fit > self.HQ_UPGRADE_MAGNIFICATION
+
     def current_zoom_percent(self) -> int:
         """True pixel zoom percentage (100 = 1 source pixel : 1 device pixel)."""
         fs = self._fit_scale() or 1.0
@@ -336,9 +350,11 @@ class ImageCanvas(QWidget):
         """HUD qualifier for a view the preview cannot supply pixels for: inspecting at
         100% or closer while the frame rendered against a downscaled buffer. Empty on HQ,
         where a settled frame carries every scan pixel and only a transient proxy does not."""
-        if self.state.hq_preview or self._source_scale() >= 1.0:
+        if self.state.hq_full_res or self._source_scale() >= 1.0:
             return ""
-        return "preview res · HQ off" if self.current_zoom_percent() >= 100 else ""
+        if self.current_zoom_percent() < 100:
+            return ""
+        return "preview res · HQ loading" if self.state.hq_preview else "preview res · HQ off"
 
     def fit_to_window(self) -> None:
         """Fit the image to the viewport (zoom_level 1.0 is the shader's fit); reset pan."""

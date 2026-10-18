@@ -1,4 +1,5 @@
 import os
+import time
 from enum import StrEnum
 
 import qtawesome as qta
@@ -122,6 +123,84 @@ def _valid_capture_mode(desired: ScanCaptureMode, *, has_me: bool, has_stack: bo
 
 _SAMPLE_COUNTS = (1, 2, 4, 8, 16)
 
+#: Quality presets (Plustek GL128): key, label, what it does, estimated minutes per frame at 3600 dpi, and the
+#: control state it sets: (capture mode, passes, multi-sampling, auto-exposure).
+_QUALITY_PRESETS: tuple[tuple[str, str, str, float, tuple[ScanCaptureMode, int, int, bool]], ...] = (
+    (
+        "fast",
+        "Fast",
+        "One normal exposure. Standard noise; the quickest scan.",
+        1.0,
+        (ScanCaptureMode.SINGLE_PASS, 1, 1, False),
+    ),
+    (
+        "quick",
+        "Quick low noise",
+        "Multi-sampling 2×: each pixel is read four times and averaged, with a normal exposure. About half the noise for about twice the time, the most noise reduction per minute. Sharpness is unchanged.",
+        2.0,
+        (ScanCaptureMode.SINGLE_PASS, 1, 2, False),
+    ),
+    (
+        "clean",
+        "Clean",
+        "Auto-exposure: measures the film first and exposes it as long as it allows without clipping. Less noise in every channel, most in blue.",
+        4.5,
+        (ScanCaptureMode.SINGLE_PASS, 1, 1, True),
+    ),
+    (
+        "low_noise",
+        "Low noise",
+        "Clean plus Multi-sampling 2×: each pixel is read four times and averaged. About half the noise again, same sharpness.",
+        7.0,
+        (ScanCaptureMode.SINGLE_PASS, 1, 2, True),
+    ),
+    (
+        "max",
+        "Max quality",
+        "Low noise plus Multi-Pass 2: the whole scan is done twice and stacked. The lowest noise for ordinary negatives.",
+        13.0,
+        (ScanCaptureMode.MULTI_PASS, 2, 2, True),
+    ),
+    (
+        "dense",
+        "Dense film",
+        "Multi-Exposure plus Multi-sampling 2×: a short and a long exposure are merged, so dark, dense areas keep detail. Choose it for contrasty or dense negatives. It sets its own exposure, so Auto-exposure is not used.",
+        8.0,
+        (ScanCaptureMode.ADAPTIVE_ME, 1, 2, False),
+    ),
+    (
+        "dense_max",
+        "Dense film max",
+        "Dense film plus Multi-Pass 2: both exposures are scanned twice and stacked. The lowest noise for contrasty or dense negatives.",
+        16.0,
+        (ScanCaptureMode.ADAPTIVE_MULTI_PASS, 2, 2, False),
+    ),
+)
+#: Estimated SNR gain over Fast (noise divided by this). Quick low noise, Clean and the stacking steps come from
+#: pair-based noise measurements on a 3600 dpi scan; the combined presets multiply them and were not measured as a whole.
+_QUALITY_SNR = {
+    "fast": "×1",
+    "quick": "about ×2",
+    "clean": "about ×2-3",
+    "low_noise": "about ×4-6",
+    "max": "about ×5-8",
+    "dense": "about ×3 in dark areas",
+    "dense_max": "about ×4 in dark areas",
+}
+
+#: A scan takes about as long as its line count, so the 3600 dpi estimates scale with the resolution.
+_REFERENCE_DPI = 3600
+
+
+def quality_minutes(base_minutes: float, dpi: int) -> str:
+    """The estimate for ``dpi`` as "about N min"."""
+    minutes = base_minutes * max(int(dpi), 1) / _REFERENCE_DPI
+    return "under 1 min" if minutes < 1 else f"about {round(minutes)} min"
+
+
+_QUALITY_CUSTOM = "custom"
+_QUALITY_CUSTOM_HINT = "Custom: the settings below do not match a preset. Each control's tooltip explains what it does."
+
 
 def _reaches_a_strip(caps: ScannerCapabilities) -> bool:
     """Whether a device holds several frames: a feeder with a capacity, or a measured strip."""
@@ -154,6 +233,9 @@ class ScanSidebar(QWidget):
     _INDETERMINATE_SCAN_PHASES = frozenset({"Preparing long exposure", "Merging exposures"})
     # How often the panel asks whether film is loaded. A unit that ejects without a command needs it.
     _MEDIA_POLL_MS = 1500
+    # A button press lasts 0.1-0.3 s, so the poll has to be quicker than that.
+    _BUTTON_POLL_MS = 100
+    _BUTTON_REARM_MS = 2500
 
     cards_changed = pyqtSignal()
 
@@ -167,10 +249,16 @@ class ScanSidebar(QWidget):
         self._devices_loaded = False
         self._media_loaded: bool | None = None  # the last poll for the selected device, None if unknown
         self._media_poll_pending = False
+        self._button_poll_pending = False
+        self._button_down = False
+        self._button_blocked_until = 0.0
+        self._caps_button = False
         self._caps_autofocus = False
         self._caps_auto_exposure = False
         self._caps_clean = False
         self._caps_superfine = False
+        self._caps_raw = False
+        self._caps_max_quality = False
         self._caps_max_samples = 1
         self._caps_film_formats: tuple[str, ...] = ()
         self._caps_film_types: tuple[str, ...] = ()
@@ -314,8 +402,8 @@ class ScanSidebar(QWidget):
 
         self.mode_btn = ChoiceButton(
             tuple(("", label) for _mode, label, _tip in _CAPTURE_MODE_LABELS),
-            "How this scan captures exposure: a single pass, repeated passes stacked for lower "
-            "noise, an adaptive short+long fusion, or both combined.",
+            "How many times and how long the film is exposed: one pass; repeated passes stacked for lower noise; "
+            "a short and a long exposure merged for dark areas; or both.",
             data=tuple(mode.value for mode, _label, _tip in _CAPTURE_MODE_LABELS),
         )
         for i, (_mode, _label, tip) in enumerate(_CAPTURE_MODE_LABELS):
@@ -331,8 +419,11 @@ class ScanSidebar(QWidget):
         quality.addWidget(self.passes_rail)
 
         # Multi-sample: repeated reads of one line the scanner averages, for shadow noise.
-        self.samples_btn = ChoiceButton((), "Reads per line the scanner averages")
-        self.samples_widget = self._row_widget(field_row("Samples", self.samples_btn))
+        self.samples_btn = ChoiceButton(
+            (),
+            "Multi-sampling: read each pixel several times and average them. Less noise at the same sharpness; the scan takes proportionally longer.",
+        )
+        self.samples_widget = self._row_widget(field_row("Multi-sampling", self.samples_btn))
         quality.addWidget(self.samples_widget)
 
         self.ir_btn = tool_toggle("fa5s.layer-group", "IR", "Scan a separate infrared channel for dust detection")
@@ -342,8 +433,27 @@ class ScanSidebar(QWidget):
         self.superfine_btn = tool_toggle("fa5s.align-justify", "Superfine", "Read one line per pass: slower, and free of line registration")
         self.autofocus_btn = tool_toggle("fa5s.bullseye", "Autofocus", "Autofocus before scanning (film is rarely perfectly flat)")
         self.autofocus_btn.setChecked(True)
-        self.ae_btn = tool_toggle("fa5s.sun", "Auto-exposure", "Meter exposure in hardware before the scan")
-        for row_btns in ((self.ir_btn, self.clean_btn, self.superfine_btn), (self.autofocus_btn, self.ae_btn)):
+        self.ae_btn = tool_toggle(
+            "fa5s.sun",
+            "Auto-exposure",
+            "Measure the film with a quick low-resolution scan, then expose as long as it allows without clipping. Less noise; the scan takes longer.",
+        )
+        self.button_btn = tool_toggle(
+            "fa5s.dot-circle",
+            "Scanner button",
+            "Start a scan with the current settings when you press a button on the scanner.",
+        )
+        self.button_btn.setVisible(False)
+        self.raw_btn = tool_toggle(
+            "fa5s.file-image",
+            "Raw",
+            "Linear sensor data with no sharpening, film-base stretch or border clamp from the scanner driver. Sharpen in NegPy instead.",
+        )
+        for row_btns in (
+            (self.ir_btn, self.clean_btn, self.superfine_btn),
+            (self.autofocus_btn, self.ae_btn, self.raw_btn),
+            (self.button_btn,),
+        ):
             row = QHBoxLayout()
             for btn in row_btns:
                 btn.setVisible(False)
@@ -356,6 +466,22 @@ class ScanSidebar(QWidget):
         self.exposure_slider.setToolTip("Scan exposure time, for a scanner that exposes it")
         self.exposure_slider.setVisible(False)
         quality.addWidget(self.exposure_slider)
+        # Presets on top of the controls below: picking one sets them, and any manual change reads Custom.
+        self.quality_btn = ChoiceButton(
+            tuple(("", label) for _key, label, _desc, _time, _state in _QUALITY_PRESETS) + (("", "Custom"),),
+            "Quality preset: sets the capture mode, Multi-sampling and Auto-exposure together. The time estimate follows the resolution.",
+            data=tuple(key for key, *_rest in _QUALITY_PRESETS) + (_QUALITY_CUSTOM,),
+        )
+        for i, (_key, label, desc, time_text, _state) in enumerate(_QUALITY_PRESETS):
+            self.quality_btn.set_choice_tooltip(
+                i, f"{label} ({quality_minutes(time_text, _REFERENCE_DPI)} at 3600 dpi, SNR {_QUALITY_SNR[_key]} vs Fast): {desc}"
+            )
+        self.quality_widget = self._row_widget(field_row("Quality", self.quality_btn))
+        self.quality_hint = hint_label("")
+        self.quality_widget.setVisible(False)
+        self.quality_hint.setVisible(False)
+        quality.insertWidget(0, self.quality_widget)
+        quality.insertWidget(1, self.quality_hint)
         layout.addWidget(self.quality_body)
 
         # ── FRAMING ──────────────────────────────────────────
@@ -462,6 +588,9 @@ class ScanSidebar(QWidget):
         self.ae_btn.toggled.connect(lambda: self._on_ae_toggled())
         self.clean_btn.toggled.connect(lambda on: self._on_ir_pass_toggled(self.ir_btn, on))
         self.superfine_btn.toggled.connect(lambda: self._update_settings_from_ui())
+        self.raw_btn.toggled.connect(lambda: self._update_settings_from_ui())
+        self.button_btn.toggled.connect(lambda: self._update_settings_from_ui())
+        self.quality_btn.currentChanged.connect(self._on_quality_preset_chosen)
         self.samples_btn.currentChanged.connect(lambda: self._update_settings_from_ui())
         self.format_combo.currentIndexChanged.connect(lambda: self._update_settings_from_ui())
         self.film_type_btn.currentChanged.connect(lambda: self._on_film_type_changed())
@@ -491,6 +620,11 @@ class ScanSidebar(QWidget):
         self._media_timer.setInterval(self._MEDIA_POLL_MS)
         self._media_timer.timeout.connect(self._poll_media)
         self._media_timer.start()
+        self.controller.scan_button_polled.connect(self._on_button_polled)
+        self._button_timer = QTimer(self)
+        self._button_timer.setInterval(self._BUTTON_POLL_MS)
+        self._button_timer.timeout.connect(self._poll_button)
+        self._button_timer.start()
         self.controller.scan_exposure_metered.connect(self._on_exposure_metered)
         self.controller.scan_meter_error.connect(self._on_meter_error)
 
@@ -594,6 +728,29 @@ class ScanSidebar(QWidget):
         self._media_loaded = None
         self._update_device_caps()
 
+    def _poll_button(self) -> None:
+        """Ask whether a scanner button is held, while the toggle is on and the unit is idle."""
+        device = self._current_device()
+        if device is None or self._scanning or self._button_poll_pending or not (self._caps_button and self.button_btn.isChecked()):
+            return
+        self._button_poll_pending = True
+        self.controller.poll_scanner_button(device.id)
+
+    @pyqtSlot(str, bool)
+    def _on_button_polled(self, device_id: str, pressed: bool) -> None:
+        """A press starts one scan, on the press and not the release, then waits for the button to be let go."""
+        self._button_poll_pending = False
+        device = self._current_device()
+        if device is None or device.id != device_id or not pressed:
+            self._button_down = False
+            return
+        if self._button_down or self._scanning or time.monotonic() < self._button_blocked_until:
+            return
+        self._button_down = True
+        self._button_blocked_until = time.monotonic() + self._BUTTON_REARM_MS / 1000.0
+        self.status_strip.set_message("Scanner button pressed")
+        self._on_scan()
+
     def _poll_media(self) -> None:
         """Ask whether film is loaded, while the panel shows and the unit is idle.
 
@@ -658,6 +815,11 @@ class ScanSidebar(QWidget):
             self.crop_label.setVisible(False)
             self.clean_btn.setVisible(False)
             self.superfine_btn.setVisible(False)
+            self.raw_btn.setVisible(False)
+            self.button_btn.setVisible(False)
+            self._caps_button = False
+            self.quality_widget.setVisible(False)
+            self.quality_hint.setVisible(False)
             self.samples_widget.setVisible(False)
             self.film_format_widget.setVisible(False)
             self.film_type_widget.setVisible(False)
@@ -665,6 +827,8 @@ class ScanSidebar(QWidget):
             self._caps_auto_exposure = False
             self._caps_clean = False
             self._caps_superfine = False
+            self._caps_raw = False
+            self._caps_max_quality = False
             self._caps_max_samples = 1
             self._caps_film_formats = ()
             self._caps_film_types = ()
@@ -798,7 +962,9 @@ class ScanSidebar(QWidget):
         self.ae_btn.setVisible(self._caps_auto_exposure)
         if self._caps_auto_exposure:
             self.ae_btn.setChecked(self._settings.auto_exposure)
-            self.ae_btn.setToolTip("Meter exposure in hardware before the scan")
+            self.ae_btn.setToolTip(
+                "Measure the film with a quick low-resolution scan, then expose as long as it allows without clipping. Less noise; the scan takes longer."
+            )
         else:
             self.ae_btn.setChecked(False)
             self.ae_btn.setToolTip("Auto-exposure not supported by this device")
@@ -818,14 +984,33 @@ class ScanSidebar(QWidget):
         self.superfine_btn.setChecked(self._caps_superfine and self._settings.superfine)
         self.superfine_btn.blockSignals(False)
 
+        self._caps_raw = bool(caps.raw_capture)
+        self.raw_btn.blockSignals(True)
+        self.raw_btn.setVisible(self._caps_raw)
+        self.raw_btn.setChecked(self._caps_raw and self._settings.raw_capture)
+        self.raw_btn.blockSignals(False)
+        self._caps_button = bool(caps.button_scan)
+        self.button_btn.blockSignals(True)
+        self.button_btn.setVisible(self._caps_button)
+        self.button_btn.setChecked(self._caps_button and self._settings.button_scan)
+        self.button_btn.blockSignals(False)
+        self._caps_max_quality = bool(caps.auto_exposure and caps.max_samples > 1 and caps.max_n_passes > 1)
+        self.quality_widget.setVisible(self._caps_max_quality)
+        self.quality_hint.setVisible(self._caps_max_quality)
+
         self._caps_max_samples = int(caps.max_samples)
         self.samples_btn.blockSignals(True)
         show_samples = caps.max_samples > 1
         counts = tuple(count for count in _SAMPLE_COUNTS if show_samples and count <= caps.max_samples)
-        self.samples_btn.set_choices(tuple(("", str(count)) for count in counts), data=counts)
+        self.samples_btn.set_choices(tuple(("", "Off" if count == 1 else f"{count}×") for count in counts), data=counts)
+        for i, count in enumerate(counts):
+            self.samples_btn.set_choice_tooltip(
+                i, "Single read per line" if count == 1 else f"{count} reads averaged: about {count}× the scan time, less noise"
+            )
         self.samples_btn.setCurrentIndex(max(self.samples_btn.findData(self._settings.samples), 0))
         self.samples_widget.setVisible(show_samples)
         self.samples_btn.blockSignals(False)
+        self._sync_quality_preset()
 
         self._caps_film_types = tuple(caps.film_types)
         self.film_type_btn.blockSignals(True)
@@ -955,6 +1140,61 @@ class ScanSidebar(QWidget):
             self._set_capture_mode(ScanCaptureMode.SINGLE_PASS)
         elif mode == ScanCaptureMode.ADAPTIVE_MULTI_PASS:
             self._set_capture_mode(ScanCaptureMode.ADAPTIVE_ME)
+
+    def _quality_state(self) -> tuple[ScanCaptureMode, int, int, bool]:
+        mode = self._capture_mode()
+        stacking = mode in _STACKING_CAPTURE_MODES
+        ae = bool(self._caps_auto_exposure and self.ae_btn.isChecked()) and mode not in _ME_CAPTURE_MODES
+        return mode, self._passes_slider_value() if stacking else 1, self._samples(), ae
+
+    def _refresh_quality_menu(self) -> None:
+        """The open dropdown lists each preset with its time at the chosen resolution and its SNR gain. The closed button
+        keeps the short name, so the row does not grow."""
+        dpi = self._dpi()
+        for action, (key, label, _desc, minutes, _state) in zip(self.quality_btn.choice_menu.actions(), _QUALITY_PRESETS):
+            action.setText(f"{label}  ·  {quality_minutes(minutes, dpi)}  ·  SNR {_QUALITY_SNR[key]}")
+
+    def _sync_quality_preset(self) -> None:
+        """Show the preset whose settings the controls hold now, else Custom, with its description."""
+        if not self._caps_max_quality:
+            return
+        self._refresh_quality_menu()
+        state = self._quality_state()
+        key, hint = _QUALITY_CUSTOM, _QUALITY_CUSTOM_HINT
+        for k, label, desc, time_text, preset_state in _QUALITY_PRESETS:
+            if preset_state == state:
+                dpi = self._dpi()
+                key, hint = (
+                    k,
+                    f"{label}, {quality_minutes(time_text, dpi)} per frame at {dpi} dpi, SNR {_QUALITY_SNR[k]} vs Fast (estimate). {desc}",
+                )
+                break
+        self.quality_btn.blockSignals(True)
+        self.quality_btn.setCurrentIndex(max(self.quality_btn.findData(key), 0))
+        self.quality_btn.blockSignals(False)
+        if self._dpi() > _REFERENCE_DPI:
+            hint += f" At {self._dpi()} dpi files are larger and scans take longer, with no extra detail over {_REFERENCE_DPI} dpi."
+        self.quality_hint.setText(hint)
+
+    def _on_quality_preset_chosen(self, _index: int = 0) -> None:
+        key = self.quality_btn.currentData()
+        preset = next((state for k, _l, _d, _t, state in _QUALITY_PRESETS if k == key), None)
+        if preset is None:
+            return
+        mode, passes, samples, ae = preset
+        self.samples_btn.blockSignals(True)
+        self.samples_btn.setCurrentIndex(max(self.samples_btn.findData(samples), 0))
+        self.samples_btn.blockSignals(False)
+        self.mode_btn.blockSignals(True)
+        self._set_capture_mode(mode)
+        self.mode_btn.blockSignals(False)
+        self.passes_slider.blockSignals(True)
+        self.passes_slider.setValue(max(passes, MIN_PASSES_UI))
+        self.passes_slider.blockSignals(False)
+        if self._caps_auto_exposure and self.ae_btn.isChecked() != ae:
+            self.ae_btn.setChecked(ae)
+        self._sync_passes_visibility()
+        self._update_settings_from_ui()
 
     def _on_mode_changed(self) -> None:
         self._sync_passes_visibility()
@@ -1298,6 +1538,8 @@ class ScanSidebar(QWidget):
         passes = [name for name, on in (("IR", capture_ir), ("ICE", self._caps_clean and self.clean_btn.isChecked())) if on]
         if self._caps_superfine and self.superfine_btn.isChecked():
             passes.append("Superfine")
+        if self._caps_raw and self.raw_btn.isChecked():
+            passes.append("Raw")
         if self._samples() > 1:
             passes.append(f"{self._samples()}× sampled")
         capture_mode = self._capture_mode()
@@ -1391,6 +1633,7 @@ class ScanSidebar(QWidget):
             clean=self._caps_clean and self.clean_btn.isChecked(),
             samples=self._samples(),
             superfine=self._caps_superfine and self.superfine_btn.isChecked(),
+            raw_capture=self._caps_raw and self.raw_btn.isChecked(),
             film_format=self._film_format(),
             film_type=self._film_type(),
             exposures=self._locked_exposures(device),
@@ -1575,6 +1818,8 @@ class ScanSidebar(QWidget):
             clean=self._caps_clean and self.clean_btn.isChecked(),
             samples=self._samples(),
             superfine=self._caps_superfine and self.superfine_btn.isChecked(),
+            raw_capture=self._caps_raw and self.raw_btn.isChecked(),
+            button_scan=self.button_btn.isChecked() if self._caps_button else self._settings.button_scan,
             film_format=self._film_format(),
             film_type=self._film_type(),
             selected_frames=(spec if (spec := self._frame_spec()) is not None else self._settings.selected_frames),
@@ -1582,4 +1827,5 @@ class ScanSidebar(QWidget):
             filename_pattern=self.pattern_edit.text().strip() or '{{ date }}_{{ "%03d" % seq }}',
             eject_after_batch=self.eject_after_act.isChecked(),
         )
+        self._sync_quality_preset()
         self._update_summary()

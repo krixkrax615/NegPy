@@ -76,6 +76,8 @@ class ScannerCapabilities:
     film_types: tuple[str, ...] = ()
     max_samples: int = 1  # per-line multi-sample bound; 1 = single read
     superfine: bool = False  # one line per pass, slower, owes the host no registration
+    raw_capture: bool = False  # can skip the driver's own sharpening and film-base stretch
+    button_scan: bool = False  # front-panel buttons the backend can poll (`poll_button`)
     #: One metered exposure can be reused for every later scan (`ScanParams.exposures`).
     exposure_lock: bool = False
 

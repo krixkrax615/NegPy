@@ -34,6 +34,9 @@ class ScannerSettings:
     clean: bool = False
     samples: int = 1
     superfine: bool = False
+    raw_capture: bool = False
+    # Start a scan when a button on the scanner is pressed.
+    button_scan: bool = True
     # Frame length for a transport that measures the strip; None lets it decide.
     film_format: str | None = None
     film_type: str = "negative"

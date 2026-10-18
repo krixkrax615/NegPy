@@ -198,6 +198,14 @@ class AppState:
 
     # High Quality / Full Resoluiton Preview Toggle
     hq_preview: bool = False
+    # With HQ on, a frame loads at preview size and only renders at full size once the view needs
+    # more pixels than the preview has (hq_active). Navigating to another frame resets it.
+    hq_active: bool = False
+
+    @property
+    def hq_full_res(self) -> bool:
+        """True when the frame on the canvas is, or is being, rendered from the full-resolution decode."""
+        return self.hq_preview and self.hq_active
 
     # Process-mode autodetect on file load (opt-in)
     autodetect_enabled: bool = False

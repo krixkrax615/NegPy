@@ -29,5 +29,6 @@ def test_an_edit_renders() -> None:
 def test_turning_hq_preview_on_renders() -> None:
     controller = _controller()
     controller.state.hq_preview = not controller.state.hq_preview
+    controller.state.hq_active = controller.state.hq_preview
     AppController._render_if_state_moved(controller)
     controller._render_debounce.start.assert_called_once()

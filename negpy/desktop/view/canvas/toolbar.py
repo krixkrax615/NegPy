@@ -587,6 +587,8 @@ class ActionToolbar(QWidget):
         )
         reference_action = overflow_menu.addAction("Reference View", self._toggle_reference)
         self._menu_tip(reference_action, "Reference view — pin this frame beside the canvas to match others to it", "toggle_reference")
+        filmstrip_action = overflow_menu.addAction("Filmstrip", self._toggle_filmstrip)
+        self._menu_tip(filmstrip_action, "Filmstrip — the roll as a row of thumbnails under the canvas", "toggle_filmstrip")
         light_table_action = overflow_menu.addAction("Light Table", self._show_light_table)
         self._menu_tip(light_table_action, "Light Table — the roll as a grid in place of the canvas", "toggle_light_table")
         self._ov_compare_action = overflow_menu.addAction("Before / After")
@@ -1249,6 +1251,13 @@ class ActionToolbar(QWidget):
         win = self.window()
         if isinstance(win, MainWindow):
             win.toggle_reference()
+
+    def _toggle_filmstrip(self) -> None:
+        from negpy.desktop.view.main_window import MainWindow
+
+        win = self.window()
+        if isinstance(win, MainWindow):
+            win.toggle_filmstrip()
 
     def _show_light_table(self) -> None:
         from negpy.desktop.view.main_window import MainWindow

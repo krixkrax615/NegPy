@@ -45,6 +45,7 @@ from negpy.kernel.image.logic import float_to_uint8
 from negpy.kernel.system.config import APP_CONFIG
 from negpy.kernel.system.logging import get_logger
 from negpy.services.export.print import PrintService
+from negpy.services.scanning.capture_info import read_capture_info
 
 logger = get_logger(__name__)
 
@@ -301,6 +302,8 @@ class MainWindow(QMainWindow):
         self.central_stack.addWidget(self.canvas)
         self.reference_pane = ReferencePane(self.canvas.background_color)
         self.reference_pane.closed.connect(self.close_reference)
+        self.reference_pane.view_changed.connect(self.canvas.set_view)
+        self.canvas.zoom_changed.connect(self._sync_reference_view)
         self.reference_pane.hide()
         self.central_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.central_splitter.addWidget(self.reference_pane)
@@ -341,6 +344,9 @@ class MainWindow(QMainWindow):
         self.session_dock.setWidget(self.session_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.session_dock)
         self.central_stack.addWidget(self.session_panel.file_browser.light_table_view)
+        self.filmstrip = self.session_panel.file_browser.filmstrip_view
+        self.central_layout.addWidget(self.filmstrip)
+        self.filmstrip.setVisible(bool(self.controller.session.repo.get_global_setting("filmstrip_visible", False)))
 
         # Snapshot the pristine layout, with both docked at their home edges at default widths,
         # so the pin and Reset Panel Layout restore the true original position and size rather
@@ -483,8 +489,14 @@ class MainWindow(QMainWindow):
             return
         self.reference_pane.set_reference(image, os.path.basename(self.state.current_file_path))
         self.reference_pane.show()
+        self._sync_reference_view(self.canvas.zoom_level)
         half = self.central_splitter.width() // 2
         self.central_splitter.setSizes([half, self.central_splitter.width() - half])
+
+    def _sync_reference_view(self, zoom: float) -> None:
+        pane = self.reference_pane
+        if pane.isVisible() and pane.linked:
+            pane.apply_view(zoom, self.canvas.pan_offset.x(), self.canvas.pan_offset.y())
 
     def close_reference(self) -> None:
         self.reference_pane.hide()
@@ -535,6 +547,15 @@ class MainWindow(QMainWindow):
             self.central_stack.setCurrentIndex(0)
             for dock in self._panels_before_light_table:
                 dock.setVisible(True)
+
+    def toggle_filmstrip(self) -> None:
+        on = not self.filmstrip.isVisible()
+        self.filmstrip.setVisible(on)
+        self.controller.session.repo.save_global_setting("filmstrip_visible", on)
+        if on:
+            row = self.controller.session.asset_model.actual_to_display(self.state.selected_file_idx)
+            if row >= 0:
+                self.filmstrip.scrollTo(self.controller.session.asset_model.index(row, 0))
 
     def reset_panel_layout(self) -> None:
         """Restore both side panels to their original edges, widths and visibility."""
@@ -805,6 +826,7 @@ class MainWindow(QMainWindow):
                 str(st.config.process.process_mode),
                 frame_position(self.controller.session.asset_model, st.selected_file_idx),
                 proof,
+                read_capture_info(st.current_file_path),
             )
         )
         self._on_zoom_info_changed(self.canvas.zoom_level)

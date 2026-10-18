@@ -41,7 +41,14 @@ from negpy.features.exposure.models import RenderIntent
 from negpy.features.flatfield.logic import apply_flatfield, flatfield_token
 from negpy.features.lab.logic import apply_resize_sharpening
 from negpy.services.rendering.lens import flatfield_source, lens_decode_token, metadata_lens_corrections, prepare_lens_source
-from negpy.features.geometry.logic import autocrop_detection_key, meter_detection_key, resolve_autocrop_rect, resolve_meter_rect
+from negpy.features.geometry.logic import (
+    autocrop_detection_key,
+    is_pure_orientation,
+    meter_detection_key,
+    orient_rect,
+    resolve_autocrop_rect,
+    resolve_meter_rect,
+)
 from negpy.features.geometry.models import crops_frame, squares_on_arm
 from negpy.features.geometry.skew import squared_geometry
 from negpy.features.retouch.logic import (
@@ -244,6 +251,23 @@ def _resolve_meter_rect(
         return settings, None
     if memo is not None and (source_key, key) in memo:
         rect = memo[(source_key, key)]
+    elif is_pure_orientation(geom) and (geom.rotation % 4 or geom.flip_horizontal or geom.flip_vertical):
+        # A turn or flip leaves the picture box where it was, turned with the frame: detect once on the unturned frame.
+        upright = dc_replace(geom, rotation=0, flip_horizontal=False, flip_vertical=False)
+        upright_key = meter_detection_key(upright, img.shape)
+        if memo is not None and (source_key, upright_key) in memo:
+            found = memo[(source_key, upright_key)]
+        else:
+            found = resolve_meter_rect(img, upright, APP_CONFIG.preview_render_size)
+            if memo is not None:
+                if len(memo) >= _METER_MEMO_SIZE:
+                    memo.pop(next(iter(memo)))
+                memo[(source_key, upright_key)] = found
+        rect = None if found is None else orient_rect(found, geom.rotation, geom.flip_horizontal, geom.flip_vertical)
+        if memo is not None:
+            if len(memo) >= _METER_MEMO_SIZE:
+                memo.pop(next(iter(memo)))
+            memo[(source_key, key)] = rect
     else:
         rect = resolve_meter_rect(img, geom, APP_CONFIG.preview_render_size)
         if memo is not None:

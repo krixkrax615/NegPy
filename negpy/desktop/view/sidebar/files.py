@@ -792,6 +792,33 @@ class ThumbnailGridView(QListView):
         event.accept()
 
 
+class FilmstripView(ThumbnailGridView):
+    """One row of thumbnails under the canvas. It shares the strip's model and selection."""
+
+    CELL = 96
+
+    def __init__(self, parent=None):
+        super().__init__(parent, target_cell=THUMB_CELL_MIN)
+        self.setFlow(QListView.Flow.LeftToRight)
+        self.setWrapping(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._last_cell = -1
+        self._apply_cell(self.CELL)
+        self.horizontalScrollBar().setSingleStep(self.CELL // 2)
+        self.setFixedHeight(self.CELL + 2 * self.SPACING + self.horizontalScrollBar().sizeHint().height())
+
+    def _relayout(self) -> None:
+        self._apply_cell(self.CELL)
+
+    def wheelEvent(self, event) -> None:
+        bar = self.horizontalScrollBar()
+        delta = event.angleDelta().x() or event.angleDelta().y()
+        bar.setValue(bar.value() - delta)
+        event.accept()
+
+
 class FileBrowser(QWidget):
     """
     Asset management panel for loading and selecting images.
@@ -1027,6 +1054,9 @@ class FileBrowser(QWidget):
         # The Light Table; MainWindow lays it out in the canvas's place.
         self.light_table_view, self._light_table_delegate = self._make_grid(THUMB_CELL_MAX)
         self.light_table_view.setSelectionModel(self.list_view.selectionModel())
+        # The filmstrip under the canvas; MainWindow lays it out and shows it on request.
+        self.filmstrip_view, self._filmstrip_delegate = self._make_grid(FilmstripView.CELL, FilmstripView)
+        self.filmstrip_view.setSelectionModel(self.list_view.selectionModel())
         self._apply_sort_order(str(saved_sort), save=False)
         self._apply_sort_direction(bool(saved_desc), save=False)
 
@@ -1209,11 +1239,15 @@ class FileBrowser(QWidget):
         self.list_view.customContextMenuRequested.connect(self._show_context_menu)
         self.light_table_view.clicked.connect(lambda index: self._on_item_clicked(index, self.light_table_view))
         self.light_table_view.doubleClicked.connect(self._open_from_light_table)
+        self.filmstrip_view.clicked.connect(lambda index: self._on_item_clicked(index, self.filmstrip_view))
+        self.filmstrip_view.doubleClicked.connect(self._on_item_double_clicked)
+        self.filmstrip_view.customContextMenuRequested.connect(lambda pos: self._show_context_menu(pos, self.filmstrip_view))
         open_key = QShortcut(QKeySequence(Qt.Key.Key_Return), self.light_table_view)
         open_key.setContext(Qt.ShortcutContext.WidgetShortcut)
         open_key.activated.connect(lambda: self._open_from_light_table(self.light_table_view.currentIndex()))
         self.light_table_view.customContextMenuRequested.connect(lambda pos: self._show_context_menu(pos, self.light_table_view))
         self.list_view.selectionModel().selectionChanged.connect(self._on_selection_changed)
+        self.list_view.selectionModel().currentChanged.connect(lambda current, _prev: self.filmstrip_view.scrollTo(current))
         self.hot_folder_btn.toggled.connect(self._on_hot_folder_toggled)
         self.controller.thumbnail_refresh_state_changed.connect(self._on_thumbnail_refresh_state_changed)
         self.controller.thumbnail_refresh_progress.connect(self._on_thumbnail_refresh_progress)
@@ -1247,8 +1281,10 @@ class FileBrowser(QWidget):
             self._activate_file(index)
             self.light_table_opened.emit()
 
-    def _make_grid(self, target_cell: int) -> tuple["ThumbnailGridView", "_ThumbnailDelegate"]:
-        view = ThumbnailGridView(target_cell=target_cell)
+    def _make_grid(
+        self, target_cell: int, view_cls: type[ThumbnailGridView] = ThumbnailGridView
+    ) -> tuple["ThumbnailGridView", "_ThumbnailDelegate"]:
+        view = view_cls(target_cell=target_cell) if view_cls is ThumbnailGridView else view_cls()
         view.setModel(self.session.asset_model)
         delegate = _ThumbnailDelegate(view, state=self.session.state)
         view.setItemDelegate(delegate)
@@ -1257,6 +1293,9 @@ class FileBrowser(QWidget):
         view.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
         view.setAlternatingRowColors(False)
         view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        if isinstance(view, FilmstripView):
+            view.setFlow(QListView.Flow.LeftToRight)
+            view.setWrapping(False)
         return view, delegate
 
     def search_library(self) -> None:

@@ -62,6 +62,11 @@ class ScannerService:
         """
         return self._get_backend().eject(device_id)
 
+    def button_pressed(self, device_id: str) -> bool | None:
+        """Whether a scanner button is held now. None where the transport has no buttons to poll."""
+        poll = getattr(self._get_backend(), "poll_button", None)
+        return None if poll is None else bool(poll(device_id))
+
     def media_loaded(self, device_id: str) -> bool | None:
         """Whether film is loaded. None where the transport cannot tell."""
         loaded = getattr(self._get_backend(), "media_loaded", None)

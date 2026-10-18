@@ -246,6 +246,7 @@ _NORM_THREAD_BATCH_OWNERS = frozenset({"autocrop", "normalization"})
 # lens-correction toggle doesn't flicker — but then shows nothing while a slow decode
 # runs. This backstop arms it late, only if that decode is still in flight by then.
 _KEEP_PREVIEW_SPINNER_DELAY_MS = 400
+_HQ_DWELL_MS = 250
 
 
 @dataclass(frozen=True)
@@ -564,6 +565,8 @@ class AppController(QObject):
     scan_eject_requested = pyqtSignal(str)
     scan_media_poll_requested = pyqtSignal(str)
     scan_media_polled = pyqtSignal(str, object)  # device id; True, False, or None where the backend cannot tell
+    scan_button_poll_requested = pyqtSignal(str)
+    scan_button_polled = pyqtSignal(str, bool)  # device id; whether a scanner button is held
     scan_roll_preview_requested = pyqtSignal(RollPreviewRequest)
     scan_roll_preview_ready = pyqtSignal(object)  # one RollPreview per strip slot
     scan_roll_preview_finished = pyqtSignal()
@@ -842,6 +845,7 @@ class AppController(QObject):
         self.canvas = canvas
         self.zoom_requested.connect(self.canvas.set_zoom)
         self.canvas.zoom_changed.connect(self.zoom_changed.emit)
+        self.canvas.zoom_changed.connect(lambda _zoom: self._schedule_hq_check())
         self.canvas.cursor_position_changed.connect(self.on_cursor_moved)
         self.canvas.cursor_left_canvas.connect(self.on_cursor_left)
 
@@ -1063,6 +1067,8 @@ class AppController(QObject):
         self.scan_eject_requested.connect(self.scan_worker.eject)
         self.scan_media_poll_requested.connect(self.scan_worker.poll_media)
         self.scan_worker.media_polled.connect(self.scan_media_polled.emit)
+        self.scan_button_poll_requested.connect(self.scan_worker.poll_button)
+        self.scan_worker.button_polled.connect(self.scan_button_polled.emit)
         self.scan_worker.cancelled.connect(self.scan_cancelled.emit)
         self.scan_worker.frame_done.connect(self._on_scan_frame_done)
         self.scan_worker.batch_finished.connect(self._on_scan_batch_finished)
@@ -1124,7 +1130,7 @@ class AppController(QObject):
         self.session.state_changed.connect(self._render_if_state_moved)
 
     def _render_state(self) -> tuple:
-        return (self.state.config, self.state.preview_raw, self.state.gpu_enabled, self.state.hq_preview)
+        return (self.state.config, self.state.preview_raw, self.state.gpu_enabled, self.state.hq_full_res)
 
     def _render_if_state_moved(self) -> None:
         """Renders after a session change unless it left every render input as last dispatched:
@@ -2616,7 +2622,7 @@ class AppController(QObject):
         config = self.state.config if config is None else config
         parts = (
             json.dumps(config.to_dict(), sort_keys=True, default=str),
-            self.state.hq_preview,
+            self.state.hq_full_res,
             self.state.workspace_color_space,
             self.state.gpu_enabled,
             self.state.soft_proof_enabled,
@@ -2706,6 +2712,8 @@ class AppController(QObject):
         self._pause_background_thumbnails()
         self._preview_load_t0 = time.perf_counter()
         keep_preview = preserve_zoom and self._requested_file_path == file_path
+        if self._requested_file_path != file_path:
+            self.state.hq_active = False
         self._requested_file_path = file_path
         # The memo fast path below repaints without request_render, so the state tied to the frame
         # the user leaves goes here: test strip, zone pins, compare split, flat peek, Keystone Lines.
@@ -2844,7 +2852,7 @@ class AppController(QObject):
                 positive_source=self.state.config.process.positive_source,
                 highlight_mode=effective_highlight_reconstruction(self.state.config.process),
                 bake_camera_wb=highlight_reconstruction_bakes_wb(self.state.config.process),
-                full_resolution=self.state.hq_preview,
+                full_resolution=self.state.hq_full_res,
                 # The half suffix distinguishes the two halves' preview caches now
                 # that the slice happens pre-downsample (each half is its own buffer).
                 file_hash=self._file_hash_for_path(file_path),
@@ -2984,6 +2992,7 @@ class AppController(QObject):
         self.config_updated.emit()
         self._first_render_t0 = time.perf_counter()
         self.request_render()
+        self._schedule_hq_check()
         self._neighbor_prefetch_generation = self._prefetch_gen
 
     def _schedule_prefetch_neighbors(self) -> None:
@@ -2991,7 +3000,7 @@ class AppController(QObject):
         QTimer.singleShot(50, lambda: self._prepare_neighbor_prefetch(generation))
 
     def _prepare_neighbor_prefetch(self, generation: int) -> None:
-        from negpy.desktop.prefetch_logic import neighbor_assets
+        from negpy.desktop.prefetch_logic import NEIGHBOR_PREFETCH_RADIUS, neighbor_assets
 
         if generation != self._prefetch_gen or self._foreground_work_active():
             return
@@ -3005,7 +3014,7 @@ class AppController(QObject):
         selected_hash = files[index].get("hash")
         protected_file_hashes = [selected_hash] if selected_hash else []
         tasks = []
-        for asset in neighbor_assets(files, display_order, index):
+        for asset in neighbor_assets(files, display_order, index, NEIGHBOR_PREFETCH_RADIUS):
             task = self._neighbor_prefetch_task(asset, generation, tuple(protected_file_hashes))
             if task is None:
                 continue
@@ -3092,10 +3101,29 @@ class AppController(QObject):
         # Resolution is in the memo key: every entry is now a permanent miss holding a
         # full-size texture.
         self._render_memo.clear()
+        self.state.hq_active = False
         self.session.set_hq_preview(not self.state.hq_preview)
         self._render_memo.large_entries = self.state.hq_preview
         if self.state.current_file_path:
             self.load_file(self.state.current_file_path, preserve_zoom=True)
+
+    def _schedule_hq_check(self) -> None:
+        """After a short dwell, so browsing and zoom gestures do not each start a full-size render."""
+        if self.state.hq_preview and not self.state.hq_active:
+            generation = self._prefetch_gen
+            QTimer.singleShot(_HQ_DWELL_MS, lambda: self._maybe_upgrade_hq(generation))
+
+    def _maybe_upgrade_hq(self, generation: int) -> None:
+        """HQ Preview renders at preview size until the view shows more than the preview can supply, then the
+        frame reloads at full resolution, keeping the current picture on screen until it is ready."""
+        state = self.state
+        if generation != self._prefetch_gen or not state.hq_preview or state.hq_active or not state.current_file_path:
+            return
+        canvas = getattr(self, "canvas", None)
+        if canvas is None or not canvas.needs_full_res():
+            return
+        state.hq_active = True
+        self.load_file(state.current_file_path, preserve_zoom=True)
 
     def _diptych_blocks_canvas(self) -> bool:
         """The diptych view shows both halves of a whole-frame scan, each with its own edit,
@@ -5994,6 +6022,10 @@ class AppController(QObject):
         """Trigger the scanner's eject action on the worker thread."""
         self.scan_eject_requested.emit(device_id)
 
+    def poll_scanner_button(self, device_id: str) -> None:
+        """Ask on the worker thread whether a scanner button is held (result via scan_button_polled)."""
+        self.scan_button_poll_requested.emit(device_id)
+
     def poll_scanner_media(self, device_id: str) -> None:
         """Ask on the worker thread whether film is loaded (result via scan_media_polled)."""
         self.scan_media_poll_requested.emit(device_id)
@@ -7003,7 +7035,7 @@ class AppController(QObject):
             detect_buffer = self.state.preview_detect_proxy
 
         target_size = float(APP_CONFIG.preview_render_size)
-        if self.state.hq_preview:
+        if self.state.hq_full_res:
             target_size = float(max(preview_raw.shape[:2]))
 
         # Only a plain render of the saved edit is reproducible on navigate-back. Overrides,

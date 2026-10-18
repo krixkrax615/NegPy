@@ -18,3 +18,12 @@ def test_neighbors_at_each_end_of_the_display_order() -> None:
 def test_missing_selection_has_no_neighbors() -> None:
     assert display_neighbor_indices([0, 1], 9) == []
     assert neighbor_assets([], [], -1) == []
+
+
+def test_a_larger_radius_adds_frames_nearest_first():
+    order = list(range(10))
+
+    assert display_neighbor_indices(order, 5, radius=3) == [4, 6, 3, 7, 2, 8]
+    assert display_neighbor_indices(order, 0, radius=3) == [1, 2, 3]
+    assert display_neighbor_indices(order, 9, radius=2) == [8, 7]
+    assert display_neighbor_indices(order, 5) == [4, 6]

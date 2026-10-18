@@ -65,6 +65,8 @@ class ScanParams:
     samples: int = 1
     # One line per pass: slower, and it owes the host no line registration.
     superfine: bool = False
+    # Linear sensor data: no driver sharpening, film-base stretch or border clamp.
+    raw_capture: bool = False
     # Film format the transport cannot measure itself ("135", "66", ...). None = let it decide.
     film_format: str | None = None
     # What is on the film. Reversal stock reads the opposite way against the unexposed film

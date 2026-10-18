@@ -14,3 +14,5 @@ class ScanResult:
     exposures: dict[str, int] | None = None
     # The ICC profile of the scanner data, where the transport gives one. The writer embeds it.
     icc_profile: bytes | None = None
+    # How the scan was captured, one line; the writer stores it in the file's ImageDescription.
+    capture_info: str | None = None

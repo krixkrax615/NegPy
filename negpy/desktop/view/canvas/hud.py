@@ -49,14 +49,16 @@ def _export_line(export: Any) -> str:
     return " · ".join(p for p in (size, paper) if p)
 
 
-def frame_info(level: int, config: Any, filename: str, res: str, mode: str, position: str = "", proof: str = "") -> Tuple[str, str, str]:
+def frame_info(
+    level: int, config: Any, filename: str, res: str, mode: str, position: str = "", proof: str = "", capture: str = ""
+) -> Tuple[str, str, str]:
     """Top-left, top-right and bottom-left pill text for an info level."""
     if level == INFO_OFF or not filename:
         return "", "", ""
     if level == INFO_BASIC:
         return " · ".join(s for s in (filename, res) if s), mode, ""
     head = " · ".join(s for s in (position, filename, res) if s)
-    top_left = "\n".join(s for s in (head, _film_line(config.metadata), _camera_line(config.metadata)) if s)
+    top_left = "\n".join(s for s in (head, _film_line(config.metadata), _camera_line(config.metadata), capture) if s)
     top_right = "\n".join(s for s in (mode, f"Proof: {proof}" if proof else "") if s)
     return top_left, top_right, _export_line(config.export)
 

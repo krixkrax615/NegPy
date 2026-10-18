@@ -49,6 +49,31 @@ def _ensure_quiet_usb_drain(scanner: Scanner) -> None:
         asic.image_usb_pace_s = DEFAULT_IMAGE_USB_PACE_S
 
 
+#: Auto-exposure meters each frame with a quick scan at this dpi before the real one.
+_METER_DPI = 600
+
+#: Samples = 2 scans at twice the dpi and averages each 2x2 block back down. The optics resolve no
+#: more at the higher dpi, so the average keeps the detail and collects four sensor reads per pixel.
+_SAMPLE_BIN = 2
+
+
+# Register 0x31 reads 0xFE at rest; pressing either of the two buttons pulls bit 3 or bit 6 low.
+_BUTTON_REGISTER = 0x31
+_BUTTON_MASK = 0x48
+
+
+def _bin_samples(arr: np.ndarray) -> np.ndarray:
+    """Average each 2x2 block of an HxW or HxWxC uint16 image (odd edge row/column dropped)."""
+    a = np.asarray(arr)
+    h, w = a.shape[0] // _SAMPLE_BIN * _SAMPLE_BIN, a.shape[1] // _SAMPLE_BIN * _SAMPLE_BIN
+    out = np.zeros((h // _SAMPLE_BIN, w // _SAMPLE_BIN, *a.shape[2:]), dtype=np.uint32)
+    for dy in range(_SAMPLE_BIN):
+        for dx in range(_SAMPLE_BIN):
+            out += a[dy:h:_SAMPLE_BIN, dx:w:_SAMPLE_BIN]
+    n = _SAMPLE_BIN * _SAMPLE_BIN
+    return ((out + n // 2) // n).astype(a.dtype)
+
+
 def _caps_for(model: Any) -> ScannerCapabilities:
     from pyopticfilm.scan.bringup import PRESCAN_DPI, default_frame_crop_norm, is_gl128_opticfilm
 
@@ -61,7 +86,7 @@ def _caps_for(model: Any) -> ScannerCapabilities:
         supported_depths=model.bpp_color,
         sources=(ScanMode.TRANSPARENCY,),
         max_area_mm=model.max_area_mm,
-        auto_exposure=False,
+        auto_exposure=gl128,
         autofocus=False,
         prescan=gl128,
         prescan_dpi=PRESCAN_DPI if gl128 else 0,
@@ -70,6 +95,9 @@ def _caps_for(model: Any) -> ScannerCapabilities:
         multi_exposure=bool(getattr(model, "scan_ready", False) and getattr(model, "exposure_long", None)),
         # Multi-Pass needs no long-exposure register; it is GL128-only in pyopticfilm.
         max_n_passes=MAX_N_PASSES if gl128 else MIN_N_PASSES,
+        max_samples=_SAMPLE_BIN if gl128 else 1,
+        raw_capture=gl128,
+        button_scan=gl128,
         adapter_frame_capacity=None,
         adapter_frame_control=False,
         can_eject=False,
@@ -148,6 +176,21 @@ def _make_scan_progress(
     return scan_progress
 
 
+def _capture_info(params: ScanParams, *, dpi: int, film_exposure: int | None) -> str:
+    """One line saying how a scan was captured, for the file's ImageDescription."""
+    parts = [f"{dpi} dpi", f"{params.depth}-bit"]
+    if params.multi_exposure_mode != MultiExposureMode.OFF:
+        parts.append("adaptive multi-exposure")
+    if params.n_passes > 1:
+        parts.append(f"multi-pass x{params.n_passes}")
+    if params.samples > 1:
+        parts.append(f"multi-sampling x{params.samples}")
+    if film_exposure is not None:
+        parts.append(f"auto-exposure {film_exposure}")
+    parts.append("raw (no driver sharpening)" if params.raw_capture else "driver capture sharpening")
+    return "NegPy Plustek scan: " + ", ".join(parts)
+
+
 def _validate_params(params: ScanParams, *, model: Any | None = None) -> None:
     from pyopticfilm.device.model_8200i import MODEL_8200I
 
@@ -167,7 +210,10 @@ def _validate_params(params: ScanParams, *, model: Any | None = None) -> None:
     if params.frame is not None:
         raise RuntimeError(f"Frame {params.frame} requested but the device has no frame-selection option")
     if params.auto_exposure:
-        raise RuntimeError("Auto-exposure requested but the device has no 'ae' option")
+        from pyopticfilm.scan.bringup import is_gl128_opticfilm
+
+        if model is None or not is_gl128_opticfilm(model):
+            raise RuntimeError("Auto-exposure requested but the device has no 'ae' option")
     if params.autofocus:
         raise RuntimeError("Autofocus requested but the device has no autofocus option")
     if params.capture_ir and model is not None and getattr(model, "supports_infrared", None) is False:
@@ -190,6 +236,16 @@ def _validate_params(params: ScanParams, *, model: Any | None = None) -> None:
             raise RuntimeError(f"{getattr(model, 'model', 'device')} does not support Multi-Pass")
         if params.capture_ir:
             raise RuntimeError("IR and Multi-Pass cannot be combined yet — scan IR separately, or set Passes to 1.")
+    if params.samples > 1:
+        from pyopticfilm.scan.bringup import is_gl128_opticfilm
+
+        name = getattr(model, "model", "device")
+        if params.samples != _SAMPLE_BIN or (model is not None and not is_gl128_opticfilm(model)):
+            raise RuntimeError(f"{name} supports Samples 1 or {_SAMPLE_BIN}")
+        resolutions = tuple(getattr(model, "resolutions_dpi", ()) or ())
+        if resolutions and dpi * _SAMPLE_BIN not in resolutions:
+            usable = ", ".join(str(d) for d in sorted(resolutions) if d * _SAMPLE_BIN in resolutions)
+            raise RuntimeError(f"Samples {_SAMPLE_BIN} scans at twice the dpi; use one of {usable} dpi")
 
 
 class PlustekSession:
@@ -252,6 +308,8 @@ class PlustekBackend:
             ) from exc
         self._calib_cache = calib_cache
         self._sessions: dict[str, PlustekSession] = {}
+        # One open of the USB device at a time: a scan holds it, a button poll only borrows it between scans.
+        self._usb_lock = threading.Lock()
 
     def list_devices(self) -> list[ScannerDevice]:
         try:
@@ -270,12 +328,13 @@ class PlustekBackend:
             raise RuntimeError(f"Device already held in a session: {device_id}")
         self._ensure_known_device(device_id)
         try:
-            scanner = Scanner.open(device_id, calib_cache=self._calib_cache)
-            if not scanner.asic._initialized:
-                scanner.asic.init()
-            _ensure_quiet_usb_drain(scanner)
-            if not scanner.asic.is_at_home():
-                scanner.home()
+            with self._usb_lock:
+                scanner = Scanner.open(device_id, calib_cache=self._calib_cache)
+                if not scanner.asic._initialized:
+                    scanner.asic.init()
+                _ensure_quiet_usb_drain(scanner)
+                if not scanner.asic.is_at_home():
+                    scanner.home()
         except DriverBindingError as exc:
             raise ScannerUnavailable(str(exc)) from exc
         except UsbError as exc:
@@ -301,7 +360,7 @@ class PlustekBackend:
             raise RuntimeError(f"Device {device_id} is held by an open session; use session.scan()")
         self._ensure_known_device(device_id)
         try:
-            with Scanner.open(device_id, calib_cache=self._calib_cache) as scanner:
+            with self._usb_lock, Scanner.open(device_id, calib_cache=self._calib_cache) as scanner:
                 if not scanner.asic._initialized:
                     scanner.asic.init()
                 _ensure_quiet_usb_drain(scanner)
@@ -322,6 +381,20 @@ class PlustekBackend:
     def eject(self, device_id: str) -> bool:
         del device_id
         return False
+
+    def poll_button(self, device_id: str) -> bool:
+        """True while a front-panel button is held. Opens the device for one register read; False when a
+        scan or session has it, or the read fails."""
+        if device_id in self._sessions or not self._usb_lock.acquire(blocking=False):
+            return False
+        try:
+            with Scanner.open(device_id, calib_cache=self._calib_cache) as scanner:
+                raw = scanner.asic.protocol.read_register(_BUTTON_REGISTER)
+            return bool(~raw & _BUTTON_MASK)
+        except Exception:  # noqa: BLE001 - a failed poll only means "not pressed"
+            return False
+        finally:
+            self._usb_lock.release()
 
     def _ensure_known_device(self, device_id: str) -> None:
         ids = {d.device_id for d in find_devices(supported_only=True)}
@@ -358,7 +431,9 @@ class PlustekBackend:
         multi_exposure = me_mode != MultiExposureMode.OFF
         n_passes = int(params.n_passes)
         window = params.window
-        geometry = self._default_scan_geometry(scanner, dpi=dpi, window=window)
+        sampled = int(params.samples) > 1
+        scan_dpi = dpi * _SAMPLE_BIN if sampled else dpi
+        geometry = self._default_scan_geometry(scanner, dpi=scan_dpi, window=window)
 
         _safe_progress(progress, 0.0)
         if cancel.is_set():
@@ -367,12 +442,40 @@ class PlustekBackend:
         try:
             self._ensure_colour_calib(
                 scanner,
-                dpi=dpi,
+                dpi=scan_dpi,
                 window=window,
                 geometry=geometry,
                 progress=progress,
                 cancel=cancel,
             )
+
+            film_exposure = None
+            if params.auto_exposure and not multi_exposure:
+                # Multi-Exposure meters each frame itself, so Auto-exposure only drives single exposures.
+                meter_geometry = self._default_scan_geometry(scanner, dpi=_METER_DPI, window=window)
+                self._ensure_colour_calib(
+                    scanner,
+                    dpi=_METER_DPI,
+                    window=window,
+                    geometry=meter_geometry,
+                    progress=progress,
+                    cancel=cancel,
+                )
+                _safe_progress(progress, 0.05, "Metering")
+                film_exposure = scanner.meter_film_exposure(
+                    resolution=_METER_DPI,
+                    area=None if meter_geometry is not None else window,
+                    geometry=meter_geometry,
+                    cancel=cancel,
+                )
+                self._ensure_colour_calib(
+                    scanner,
+                    dpi=scan_dpi,
+                    window=window,
+                    geometry=geometry,
+                    progress=progress,
+                    cancel=cancel,
+                )
 
             scan_progress = _make_scan_progress(
                 progress,
@@ -390,7 +493,7 @@ class PlustekBackend:
 
             scan_area = None if geometry is not None else window
             rgb_image = scanner.scan(
-                resolution=dpi,
+                resolution=scan_dpi,
                 mode="color",
                 area=scan_area,
                 geometry=geometry,
@@ -401,6 +504,8 @@ class PlustekBackend:
                 infrared=capture_ir,
                 align_passes=True,
                 n_passes=n_passes,
+                single_pass_exposure=film_exposure,
+                raw=bool(params.raw_capture),
             )
             ir_plane = np.asarray(rgb_image.ir) if capture_ir and rgb_image.ir is not None else None
         except ScanCancelled as exc:
@@ -410,14 +515,19 @@ class PlustekBackend:
         except PlustekError as exc:
             raise RuntimeError(str(exc)) from exc
 
+        rgb = np.asarray(rgb_image.rgb)
+        if sampled:
+            rgb = _bin_samples(rgb)
+            ir_plane = _bin_samples(ir_plane) if ir_plane is not None else None
         if not multi_exposure:
             _safe_progress(progress, 1.0)
         return ScanResult(
-            rgb=np.asarray(rgb_image.rgb),
+            rgb=rgb,
             ir=ir_plane,
             dpi=dpi,
             device_model=rgb_image.device_model or f"{scanner.model.vendor} {scanner.model.model}",
             ir_valid_mask=None,
+            capture_info=_capture_info(params, dpi=dpi, film_exposure=film_exposure),
         )
 
     @staticmethod

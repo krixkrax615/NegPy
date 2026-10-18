@@ -137,6 +137,7 @@ class _FakeController(QObject):
     scan_media_polled = pyqtSignal(str, object)
     scan_exposure_metered = pyqtSignal(object, int)
     scan_meter_error = pyqtSignal(str)
+    scan_button_polled = pyqtSignal(str, bool)
 
     def __init__(self, settings: dict | None = None) -> None:
         super().__init__()
@@ -144,6 +145,7 @@ class _FakeController(QObject):
         self.started: list[tuple[str, object]] = []
         self.ejected_ids: list[str] = []
         self.polled_ids: list[str] = []
+        self.button_polls: list[str] = []
         self.device_requests = 0
         self.backend_requests: list[str] = []
         self.cancels = 0
@@ -171,6 +173,9 @@ class _FakeController(QObject):
 
     def poll_scanner_media(self, device_id: str) -> None:
         self.polled_ids.append(device_id)
+
+    def poll_scanner_button(self, device_id: str) -> None:
+        self.button_polls.append(device_id)
 
 
 _OUT = tempfile.gettempdir()  # an existing absolute folder: Scan refuses any other
@@ -1466,3 +1471,163 @@ def test_frames_past_the_holders_slots_refuse_the_scan() -> None:
     assert sidebar.scan_btn.isEnabled() is False
     sidebar._on_scan()
     assert controller.started == []
+
+
+PLUSTEK_CAPS = ScannerCapabilities(
+    ir_channel=False,
+    supported_dpi=(1800, 3600, 7200),
+    supported_depths=(16,),
+    sources=(ScanMode.TRANSPARENCY,),
+    max_area_mm=(24.0, 36.0),
+    auto_exposure=True,
+    multi_exposure=True,
+    max_n_passes=9,
+    max_samples=2,
+    raw_capture=True,
+)
+PLUSTEK_DEVICE = ScannerDevice(id="plustek:1", vendor="Plustek", model="OpticFilm 8100", capabilities=PLUSTEK_CAPS)
+
+PLUSTEK_BUTTON_CAPS = replace(PLUSTEK_CAPS, button_scan=True)
+PLUSTEK_BUTTON_DEVICE = ScannerDevice(id="plustek:2", vendor="Plustek", model="OpticFilm 8200i", capabilities=PLUSTEK_BUTTON_CAPS)
+
+
+def _preset(sidebar: ScanSidebar) -> str:
+    return sidebar.quality_btn.currentData()
+
+
+def test_quality_presets_set_the_controls_and_any_manual_change_reads_custom():
+    sidebar, _ = _sidebar(PLUSTEK_DEVICE)
+
+    assert not sidebar.quality_widget.isHidden()
+    sidebar.quality_btn.setCurrentIndex(sidebar.quality_btn.findData("max"))
+    assert sidebar._capture_mode() == ScanCaptureMode.MULTI_PASS
+    assert sidebar._passes_slider_value() == 2 and sidebar._samples() == 2 and sidebar.ae_btn.isChecked()
+    assert "Max quality" in sidebar.quality_hint.text()
+
+    sidebar.quality_btn.setCurrentIndex(sidebar.quality_btn.findData("dense"))
+    assert sidebar._capture_mode() == ScanCaptureMode.ADAPTIVE_ME and not sidebar.ae_btn.isChecked()
+    assert _preset(sidebar) == "dense"
+
+    sidebar.quality_btn.setCurrentIndex(sidebar.quality_btn.findData("fast"))
+    assert _preset(sidebar) == "fast" and sidebar._samples() == 1 and not sidebar.ae_btn.isChecked()
+
+    sidebar.ae_btn.setChecked(True)
+    assert _preset(sidebar) == "clean"
+    sidebar.passes_slider.setValue(3)
+    sidebar._set_capture_mode(ScanCaptureMode.MULTI_PASS)
+    sidebar._update_settings_from_ui()
+    assert _preset(sidebar) == "custom"
+    assert sidebar.quality_hint.text().startswith("Custom")
+
+
+def test_quality_presets_are_hidden_for_other_scanners():
+    sidebar, _ = _sidebar(FULL_DEVICE)
+
+    assert sidebar.quality_widget.isHidden() and sidebar.quality_hint.isHidden()
+
+
+def test_quality_hint_scales_with_the_resolution_and_warns_above_3600():
+    sidebar, _ = _sidebar(PLUSTEK_DEVICE)
+    sidebar.quality_btn.setCurrentIndex(sidebar.quality_btn.findData("max"))
+    assert "about 13 min" in sidebar.quality_hint.text() and "3600 dpi" in sidebar.quality_hint.text()
+
+    sidebar.dpi_combo.setCurrentText("1800")
+    assert "about 6 min" in sidebar.quality_hint.text()
+
+    sidebar.dpi_combo.setCurrentText("7200")
+    text = sidebar.quality_hint.text()
+    assert "about 26 min" in text and "no extra detail" in text
+
+    sidebar.quality_btn.setCurrentIndex(sidebar.quality_btn.findData("dense_max"))
+    assert sidebar._capture_mode() == ScanCaptureMode.ADAPTIVE_MULTI_PASS and sidebar._passes_slider_value() == 2
+
+
+def test_quality_preset_reflects_saved_settings_when_the_device_connects():
+    saved = {"samples": 2, "auto_exposure": True, "multi_exposure_mode": "off", "n_passes": 1}
+    sidebar, _ = _sidebar(PLUSTEK_DEVICE, settings=saved)
+
+    assert sidebar._samples() == 2 and sidebar.ae_btn.isChecked()
+    assert _preset(sidebar) == "low_noise"
+    assert sidebar.quality_hint.text().startswith("Low noise")
+
+
+def test_quick_low_noise_preset_is_multi_sampling_alone():
+    sidebar, _ = _sidebar(PLUSTEK_DEVICE)
+    sidebar.quality_btn.setCurrentIndex(sidebar.quality_btn.findData("quick"))
+
+    assert sidebar._capture_mode() == ScanCaptureMode.SINGLE_PASS
+    assert sidebar._samples() == 2 and not sidebar.ae_btn.isChecked()
+    assert _preset(sidebar) == "quick" and "about 2 min" in sidebar.quality_hint.text()
+
+
+def test_quality_hint_states_the_snr_gain():
+    sidebar, _ = _sidebar(PLUSTEK_DEVICE)
+    sidebar.quality_btn.setCurrentIndex(sidebar.quality_btn.findData("quick"))
+
+    assert "SNR about ×2 vs Fast (estimate)" in sidebar.quality_hint.text()
+
+
+def test_quality_dropdown_lists_time_and_snr_for_each_preset_and_follows_dpi():
+    sidebar, _ = _sidebar(PLUSTEK_DEVICE)
+    texts = [a.text() for a in sidebar.quality_btn.choice_menu.actions()]
+
+    assert any(t.startswith("Max quality") and "about 13 min" in t and "SNR about ×5-8" in t for t in texts)
+    assert sidebar.quality_btn.minimumWidth() < 260, "the closed button keeps the short names"
+
+    sidebar.dpi_combo.setCurrentText("1800")
+    assert any(t.startswith("Max quality") and "about 6 min" in t for t in (a.text() for a in sidebar.quality_btn.choice_menu.actions()))
+
+
+# ── scanner button poll ──────────────────────────────
+
+
+def test_button_toggle_visible_and_checked_only_for_button_scan_device() -> None:
+    sidebar, _ = _sidebar(PLUSTEK_BUTTON_DEVICE)
+    assert sidebar.button_btn.isVisibleTo(sidebar) is True
+    assert sidebar.button_btn.isChecked() is True
+
+    sidebar, _ = _sidebar(FULL_DEVICE)
+    assert sidebar.button_btn.isVisibleTo(sidebar) is False
+
+
+def test_poll_button_asks_the_controller_once() -> None:
+    sidebar, controller = _sidebar(PLUSTEK_BUTTON_DEVICE)
+    sidebar._poll_button()
+    assert controller.button_polls == [PLUSTEK_BUTTON_DEVICE.id]
+
+    sidebar._poll_button()  # a poll is already in flight: nothing
+    assert controller.button_polls == [PLUSTEK_BUTTON_DEVICE.id]
+
+
+def test_button_polled_starts_one_scan_then_waits_for_release() -> None:
+    sidebar, controller = _sidebar(PLUSTEK_BUTTON_DEVICE)
+    started: list = []
+    sidebar._on_scan = lambda: started.append(1)
+
+    sidebar._on_button_polled(PLUSTEK_BUTTON_DEVICE.id, True)
+    assert len(started) == 1
+
+    sidebar._on_button_polled(PLUSTEK_BUTTON_DEVICE.id, True)  # still held down
+    assert len(started) == 1
+
+    sidebar._on_button_polled(PLUSTEK_BUTTON_DEVICE.id, False)  # released
+    sidebar._button_blocked_until = 0.0  # the 2.5 s re-arm window has passed
+    sidebar._on_button_polled(PLUSTEK_BUTTON_DEVICE.id, True)
+    assert len(started) == 2
+
+
+def test_button_polled_ignored_while_scanning() -> None:
+    sidebar, _ = _sidebar(PLUSTEK_BUTTON_DEVICE)
+    started: list = []
+    sidebar._on_scan = lambda: started.append(1)
+
+    sidebar.set_scanning(True)
+    sidebar._on_button_polled(PLUSTEK_BUTTON_DEVICE.id, True)
+    assert started == []
+
+
+def test_poll_button_skipped_when_toggle_is_off() -> None:
+    sidebar, controller = _sidebar(PLUSTEK_BUTTON_DEVICE)
+    sidebar.button_btn.setChecked(False)
+    sidebar._poll_button()
+    assert controller.button_polls == []
