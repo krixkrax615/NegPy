@@ -7,15 +7,22 @@ from dataclasses import dataclass
 from typing import Any, Iterator, Optional, Sequence, Union
 
 from negpy.features.metadata.gear_models import FilmEdge, FilmStock
+from negpy.services.film_edge.barcodes import (
+    DX_CLOCK_TRACK,
+    DX_DATA_TRACK,
+    DX_MODULE,
+    FRAME_INDEX_LENGTH,
+    FRAME_INDEX_TRACK,
+    KEYKODE_MODULE,
+    KEYKODE_TRACK,
+    dx_bits,
+    keykode_bits,
+)
 from negpy.services.film_edge.geometry import HALF_FRAME_PITCH, FilmGeometry, SheetFormat
 from negpy.services.film_edge.layouts import LAYOUTS, Band, EdgeRun
 
 LABEL_PITCH_135 = HALF_FRAME_PITCH
-DX_MODULE = 0.406
-DX_MODULES = 31
 DX_START = 1.9
-DX_DATA_TRACK = (0.0, 1.0)
-DX_CLOCK_TRACK = (1.0, 2.2)
 # A DX label ends this far past its position, clear of the barcode's quiet zone.
 DX_LABEL_END = 1.5
 # Longer than any item's half-width, so an item that straddles a cut is kept and clipped.
@@ -37,19 +44,23 @@ class EdgeText:
     lead: str = ""
     trail: str = ""
     under: str = ""
+    char_width: float = 0.0
+
+
+Track = tuple[tuple[float, float], tuple[int, ...]]
 
 
 @dataclass(frozen=True)
 class EdgeCode:
-    """Bits read left to right; 1 prints light."""
+    """A barcode in the bottom band; each track is ((near, far) mm from the film edge, module bits)."""
 
     x: float
-    clock: tuple[int, ...]
-    data: tuple[int, ...]
+    tracks: tuple[Track, ...]
+    module: float = DX_MODULE
 
     @property
     def length(self) -> float:
-        return DX_MODULES * DX_MODULE
+        return max(len(bits) for _span, bits in self.tracks) * self.module
 
 
 EdgeItem = Union[EdgeText, EdgeCode]
@@ -106,8 +117,17 @@ class EdgeStyle:
         """The stock's DX number, else a stand-in from its name; never 0, which readers reject."""
         if self.dx_number is not None:
             return self.dx_number
-        digest = zlib.crc32(f"{self.maker} {self.text}".strip().encode("ascii", "ignore"))
+        digest = self._digest()
         return 1 + digest % 127, (digest >> 8) % 16
+
+    @property
+    def roll(self) -> str:
+        """Stand-in 6-digit roll prefix of a KEYKODE key, as "07 6163"."""
+        digits = f"{self._digest() % 1_000_000:06d}"
+        return f"{digits[:2]} {digits[2:]}"
+
+    def _digest(self) -> int:
+        return zlib.crc32(f"{self.maker} {self.text}".strip().encode("ascii", "ignore"))
 
 
 def parse_dx(text: str) -> Optional[tuple[int, int]]:
@@ -156,20 +176,6 @@ def label_text(index: int) -> str:
     return f"{index // 2 + 1}{'A' if index % 2 else ''}"
 
 
-def dx_bits(number: int, half: bool, product: tuple[int, int]) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """(clock, data) tracks of a 31-module DX film edge barcode (ISO 1007, zxing layout)."""
-    p1, p2 = product
-
-    def bits(value: int, count: int) -> list[int]:
-        return [(value >> shift) & 1 for shift in range(count - 1, -1, -1)]
-
-    payload = [0, *bits(p1, 7), 0, *bits(p2, 4), *bits(number % 64, 6), int(half), 0]
-    parity = sum(payload) % 2
-    data = (1, 0, 1, 0, 1, *payload, parity, 0, 1, 0, 1)
-    clock = (1, 1, 1, 1, 1, *[i % 2 for i in range(23)], 1, 1, 1)
-    return clock, data
-
-
 def edge_items(
     geometry: FilmGeometry,
     style: EdgeStyle,
@@ -184,7 +190,7 @@ def edge_items(
     if not style.printed:
         return []
     layout = LAYOUTS.get(style.layout, LAYOUTS[GENERIC])
-    fields = {"maker": style.maker, "text": style.text, "code": style.code or style.text}
+    fields = {"maker": style.maker, "text": style.text, "code": style.code or style.text, "roll": style.roll}
     items: list[EdgeItem] = []
     if geometry.format == SheetFormat.MEDIUM:
         runs = layout.runs_120
@@ -203,19 +209,26 @@ def edge_items(
                 _add_text(items, run, anchor, align, {**fields, "n": number, "label": label_text(j)})
             if dx:
                 clock, data = dx_bits(number, is_a, style.dx_product)
-                items.append(EdgeCode(x + DX_START, clock, data))
+                items.append(EdgeCode(x + DX_START, ((DX_DATA_TRACK, data), (DX_CLOCK_TRACK, clock))))
     roll_end = frame_count * geometry.pitch
     for run in runs:
         if run.on == "pitch":
             for k, x in _pitch_positions(run, roll_end):
-                _add_text(items, run, x, run.align, {**fields, "n": run.first + k, "label": ""})
+                foot = run.first + k
+                _add_text(items, run, x, run.align, {**fields, "n": foot, "label": ""})
+                if run.barcode == "index":
+                    items.append(EdgeCode(x - FRAME_INDEX_LENGTH / 2, ((FRAME_INDEX_TRACK, (1,)),), FRAME_INDEX_LENGTH))
+                elif run.barcode:
+                    perforations = 32 if run.barcode.endswith("+32") else 0
+                    bits = keykode_bits(fields["code"], style.roll.replace(" ", ""), foot, perforations)
+                    items.append(EdgeCode(x + run.barcode_at, ((KEYKODE_TRACK, bits),), KEYKODE_MODULE))
     return [item for item in items if x0 - REACH <= item.x <= x1 + REACH]
 
 
 def _add_text(items: list[EdgeItem], run: EdgeRun, x: float, align: str, fields: dict) -> None:
     text = " ".join(run.text.format(**fields).split())
     if text:
-        items.append(EdgeText(x, run.band, text, run.cap, run.offset, align, run.max_width, run.lead, run.trail, run.under))
+        items.append(EdgeText(x, run.band, text, run.cap, run.offset, align, run.max_width, run.lead, run.trail, run.under, run.char_width))
 
 
 def _pitch_positions(run: EdgeRun, roll_end: float) -> Iterator[tuple[int, float]]:

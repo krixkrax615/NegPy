@@ -52,7 +52,7 @@ H-1-5207, H-1-5213, H-1-5219), resampled to 5 nm, under the same license. The
 Kodak consumer and VERITA 200D crosstalk estimates in crosstalk/ are fitted with
 it.
 
-The DX numbers and the Kodak Gold and Ultra Max edge codes in the `edge` entries
+The DX numbers, the Kodak Gold and Ultra Max edge codes and two respool sources in the `edge` entries
 of gear/film_stocks.json come from The Big Film Database (dxdatabase) © 2018 by
 Dxdatabase, licensed CC BY-SA 4.0:
 

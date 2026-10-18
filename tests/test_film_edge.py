@@ -1,13 +1,16 @@
+import re
+
+import pytest
+
 from negpy.features.metadata.gear_models import FilmEdge, FilmStock, GearLibrary
+from negpy.services.film_edge.barcodes import _CODE128, DX_MODULE, KEYKODE_MODULE, code128c_bits, dx_bits
 from negpy.services.film_edge.edge import (
-    DX_MODULE,
     DX_START,
     Band,
     EdgeCode,
     EdgeStyle,
     EdgeText,
     ascii_upper,
-    dx_bits,
     edge_family,
     edge_style,
     edge_items,
@@ -15,8 +18,8 @@ from negpy.services.film_edge.edge import (
     parse_dx,
     split_maker,
 )
-from negpy.services.film_edge.geometry import SheetFormat, film_geometry
-from negpy.services.film_edge.layouts import LAYOUTS
+from negpy.services.film_edge.geometry import PERF_PHASE, PERF_PITCH, SheetFormat, film_geometry
+from negpy.services.film_edge.layouts import KEY_DOT, LAYOUTS, MARK_GAP
 
 FULL = film_geometry(SheetFormat.FULL_FRAME)
 HALF = film_geometry(SheetFormat.HALF_FRAME)
@@ -37,6 +40,11 @@ def _decode_dx(clock, data):
 
     frame = number(payload[13:19])
     return number(payload[1:8]), number(payload[9:13]), f"{frame}{'A' if payload[19] else ''}"
+
+
+def _dx(code):
+    (_data_span, data), (_clock_span, clock) = code.tracks
+    return clock, data
 
 
 def test_dx_code_decodes_the_wikipedia_sample():
@@ -93,8 +101,8 @@ def test_each_label_is_followed_by_its_own_code_clear_of_the_label():
         assert label.align == "right"
         assert code.x - label.x >= 0.38
         assert code.x + code.length < label.x - DX_START + 19.0 - 2.5
-        assert len(code.data) == 31 and code.length == 31 * DX_MODULE
-    assert _decode_dx(codes[1].clock, codes[1].data)[2] == "1A"
+        assert len(_dx(code)[1]) == 31 and code.length == 31 * DX_MODULE
+    assert _decode_dx(*_dx(codes[1]))[2] == "1A"
 
 
 def test_120_numbers_run_at_their_own_pitch():
@@ -114,10 +122,39 @@ def test_ilford_top_band_prints_the_maker_and_product_and_no_numbers():
     assert not any(t.isdigit() and t != "400" for t in top)
 
 
-def test_cine_film_has_no_frame_numbers_and_no_code():
-    style = EdgeStyle("cine", "KODAK", "VISION3 500T", dx=False)
-    items = edge_items(FULL, style, 6, 0, 1e9)
-    assert all(isinstance(i, EdgeText) and i.band == Band.TOP and i.text == "KODAK VISION3 500T" for i in items)
+def test_cine_film_prints_keykode_and_no_frame_numbers():
+    style = EdgeStyle("cine", "EASTMAN", "5219", "EJ", dx=True)
+    items = edge_items(FULL, style, 36, 0, 1e9)
+    keys = [i for i in items if isinstance(i, EdgeText)]
+    codes = [i for i in items if isinstance(i, EdgeCode) and i.module == KEYKODE_MODULE]
+    index = sorted(i.x + i.length / 2 for i in items if isinstance(i, EdgeCode) and i.module != KEYKODE_MODULE)
+    assert [k.text for k in keys[:2]] == [f"EJ {style.roll} 1000", f"EJ {style.roll} 1001"]
+    assert all(re.fullmatch(r"EJ \d\d \d{4} \d{4}(\+32)?", k.text) and k.band == Band.BOTTOM and k.trail == "dot" for k in keys)
+    assert len(codes) == len(keys)
+    for key in keys:
+        dot = key.x + MARK_GAP * key.cap + KEY_DOT / 2
+        assert (dot - PERF_PHASE) / PERF_PITCH == pytest.approx(round((dot - PERF_PHASE) / PERF_PITCH))
+        code = min(codes, key=lambda c: abs(c.x - dot))
+        assert code.module == KEYKODE_MODULE and code.length == pytest.approx(23.432, abs=0.01)
+        assert code.x + code.length == pytest.approx(dot + 6 * PERF_PITCH)
+    plus = sorted(k.x for k in keys if k.text.endswith("+32"))
+    full = sorted(k.x for k in keys if not k.text.endswith("+32"))
+    assert full[1] - full[0] == pytest.approx(64 * PERF_PITCH) and plus and plus[0] > full[0]
+    first_dot = full[0] + MARK_GAP * 1.52 + KEY_DOT / 2
+    assert [round((x - first_dot) / PERF_PITCH) for x in index[:6]] == [8, 12, 16, 20, 24, 40]
+
+
+def test_code_128_table_and_symbol_structure():
+    assert len(_CODE128) == 107 and len(set(_CODE128)) == 107
+    assert all(sum(map(int, widths)) == 11 for widths in _CODE128[:106]) and sum(map(int, _CODE128[106])) == 13
+    bits = code128c_bits("0209076163436800")
+    assert len(bits) == 123
+    runs = [len(m.group()) for m in re.finditer(r"1+|0+", "".join(map(str, bits)))]
+    symbols = ["".join(map(str, runs[i : i + 6])) for i in range(0, len(runs) - 7, 6)] + ["".join(map(str, runs[-7:]))]
+    values = [_CODE128.index(sym) for sym in symbols]
+    assert values[0] == 105 and values[-1] == 106
+    assert values[1:-2] == [2, 9, 7, 61, 63, 43, 68, 0]
+    assert values[-2] == (105 + sum(i * v for i, v in enumerate(values[1:-2], 1))) % 103
 
 
 def test_edge_family():
@@ -139,7 +176,7 @@ def test_frames_left_out_keep_the_other_frames_numbers():
     full = [i.text for i in edge_items(FULL, style, 2, 0, 1e9, numbers=[0, 2]) if isinstance(i, EdgeText) and i.band == Band.BOTTOM]
     assert full == ["1", "1A", "3", "3A"]
     codes = [i for i in edge_items(FULL, style, 2, 0, 1e9, numbers=[0, 2]) if isinstance(i, EdgeCode)]
-    assert _decode_dx(codes[2].clock, codes[2].data)[2] == "3"
+    assert _decode_dx(*_dx(codes[2]))[2] == "3"
     half = [
         i.text
         for i in edge_items(HALF, EdgeStyle("ilford", "ILFORD", "HP5 PLUS"), 2, 0, 1e9, numbers=[0, 3])
@@ -155,7 +192,7 @@ def test_plain_film_prints_nothing_on_its_edges():
 
 
 def test_every_layout_is_well_formed():
-    fields = {"n": 1, "label": "1A", "maker": "M", "text": "T", "code": "C"}
+    fields = {"n": 1, "label": "1A", "maker": "M", "text": "T", "code": "C", "roll": "01 2345"}
     for name, layout in LAYOUTS.items():
         assert set(layout.dx) <= {"color", "bw"}, name
         for fmt, runs in (("135", layout.runs_135), ("120", layout.runs_120)):
@@ -163,7 +200,8 @@ def test_every_layout_is_well_formed():
                 run.text.format(**fields)
                 assert run.on in (("number", "half", "pitch") if fmt == "135" else ("pitch",)), name
                 assert run.on != "pitch" or run.pitch > 0, name
-                assert {run.lead, run.trail, run.under} <= {"", "triangle", "outline", "arrow", "dots"}, name
+                assert {run.lead, run.trail, run.under} <= {"", "triangle", "outline", "arrow", "dots", "dot"}, name
+                assert run.barcode in ("", "keykode", "keykode+32", "index"), name
 
 
 def test_split_maker_takes_a_leading_maker_word_off_the_name():
@@ -183,14 +221,14 @@ def test_parse_dx_reads_only_numbers_the_edge_code_can_carry():
 def test_a_real_dx_number_reaches_the_barcode():
     style = EdgeStyle("ilford", "ILFORD", "HP5 PLUS", dx=True, dx_number=(109, 9))
     code = next(i for i in edge_items(FULL, style, 1, 0, 1e9) if isinstance(i, EdgeCode))
-    assert _decode_dx(code.clock, code.data) == (109, 9, "1")
+    assert _decode_dx(*_dx(code)) == (109, 9, "1")
 
 
 def test_catalog_edge_data_beats_the_name_guess():
-    stock = FilmStock(manufacturer="Kodak", stock_name="Vision3 500T", edge=FilmEdge(style="cine", maker="EASTMAN", text="5219"))
+    stock = FilmStock(manufacturer="Kodak", stock_name="Vision3 500T", edge=FilmEdge(style="cine", maker="EASTMAN", text="5219", code="EJ"))
     style = edge_style(stock)
-    assert (style.layout, style.maker, style.text) == ("cine", "EASTMAN", "5219")
-    assert {i.text for i in edge_items(FULL, style, 4, 0, 1e9)} == {"EASTMAN 5219"}
+    assert (style.layout, style.maker, style.text, style.code) == ("cine", "EASTMAN", "5219", "EJ")
+    assert {i.text.split()[0] for i in edge_items(FULL, style, 12, 0, 1e9) if isinstance(i, EdgeText)} == {"EJ"}
 
 
 def test_the_display_name_never_reaches_the_edge():

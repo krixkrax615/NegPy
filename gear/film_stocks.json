@@ -313,7 +313,7 @@
       "maker": "EASTMAN",
       "text": "5207",
       "code": "EN",
-      "source": "Kodak KEYKODE diagrams"
+      "source": "Kodak KEYKODE diagrams; KEYKODE layout from photos of AHU 250D (EN) and AHU 500T (EJ) rolls"
     }
   },
   {
@@ -324,7 +324,12 @@
     "iso": 250,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Motion picture stock, daylight balanced."
+    "notes": "Motion picture stock, daylight balanced.",
+    "edge": {
+      "style": "cine",
+      "code": "EN",
+      "source": "photo of an AHU 250D roll: EN key and KEYKODE barcode, no DX"
+    }
   },
   {
     "id": "film-vision3-500t-remjet",
@@ -340,7 +345,7 @@
       "maker": "EASTMAN",
       "text": "5219",
       "code": "EJ",
-      "source": "Kodak KEYKODE diagrams"
+      "source": "Kodak KEYKODE diagrams; KEYKODE layout from photos of AHU 250D (EN) and AHU 500T (EJ) rolls"
     }
   },
   {
@@ -351,7 +356,12 @@
     "iso": 500,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Motion picture stock, tungsten balanced."
+    "notes": "Motion picture stock, tungsten balanced.",
+    "edge": {
+      "style": "cine",
+      "code": "EJ",
+      "source": "photo of an AHU 500T roll: EJ key and KEYKODE barcode, no DX"
+    }
   },
   {
     "id": "film-double-x-250",
@@ -367,7 +377,7 @@
       "maker": "EASTMAN",
       "text": "5222",
       "code": "KE",
-      "source": "Kodak KEYKODE diagrams"
+      "source": "Kodak KEYKODE diagrams; KEYKODE layout from photos of AHU 250D (EN) and AHU 500T (EJ) rolls"
     }
   },
   {
@@ -463,7 +473,7 @@
       "maker": "EASTMAN",
       "text": "5203",
       "code": "ER",
-      "source": "Kodak KEYKODE diagrams"
+      "source": "Kodak KEYKODE diagrams; KEYKODE layout from photos of AHU 250D (EN) and AHU 500T (EJ) rolls"
     }
   },
   {
@@ -479,7 +489,8 @@
       "style": "cine",
       "maker": "EASTMAN",
       "text": "5213",
-      "source": "Kodak KEYKODE diagrams"
+      "code": "EQ",
+      "source": "Kodak KEYKODE diagrams (7213 EQ); KEYKODE layout from photos of AHU 250D (EN) and AHU 500T (EJ) rolls"
     }
   },
   {
@@ -648,7 +659,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Daylight-balanced cinema-derived color negative with the remjet removed; custom T-grain, soft natural saturation, warm skin tones, subtle halation."
+    "notes": "Daylight-balanced cinema-derived color negative with the remjet removed; custom T-grain, soft natural saturation, warm skin tones, subtle halation.",
+    "edge": {
+      "printsAs": "film-vision3-250d-remjet",
+      "source": "Big Film Database: CineStill 400D is Vision3 5207"
+    }
   },
   {
     "id": "film-cinestill-50d",
@@ -788,7 +803,11 @@
     "iso": 50,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 50D emulsion without remjet and with an integrated anti-halation layer; daylight balanced, near grain-free."
+    "notes": "Vision3 50D emulsion without remjet and with an integrated anti-halation layer; daylight balanced, near grain-free.",
+    "edge": {
+      "printsAs": "film-vision3-50d-remjet",
+      "source": "respooled Vision3 50D with an anti-halation layer"
+    }
   },
   {
     "id": "film-candido-200-studio",
@@ -798,7 +817,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 200T emulsion without remjet and with an integrated anti-halation layer; tungsten balanced."
+    "notes": "Vision3 200T emulsion without remjet and with an integrated anti-halation layer; tungsten balanced.",
+    "edge": {
+      "printsAs": "film-vision3-200t-remjet",
+      "source": "respooled Vision3 200T with an anti-halation layer"
+    }
   },
   {
     "id": "film-candido-400-classic",
@@ -808,7 +831,11 @@
     "iso": 400,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 250D emulsion without remjet and with an integrated anti-halation layer; daylight balanced."
+    "notes": "Vision3 250D emulsion without remjet and with an integrated anti-halation layer; daylight balanced.",
+    "edge": {
+      "printsAs": "film-vision3-250d-ahu",
+      "source": "respooled Vision3 250D with an anti-halation layer"
+    }
   },
   {
     "id": "film-candido-800-reserve",
@@ -818,7 +845,11 @@
     "iso": 800,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Vision3 500T emulsion without remjet and with an integrated anti-halation layer; tungsten balanced."
+    "notes": "Vision3 500T emulsion without remjet and with an integrated anti-halation layer; tungsten balanced.",
+    "edge": {
+      "printsAs": "film-vision3-500t-ahu",
+      "source": "respooled Vision3 500T with an anti-halation layer"
+    }
   },
   {
     "id": "film-silbersalz35-50d",
@@ -1128,7 +1159,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "ColorNegative",
-    "notes": "Repackaged tungsten-balanced cinema stock of unnamed source; moderate cine grain."
+    "notes": "Repackaged tungsten-balanced cinema stock of unnamed source; moderate cine grain.",
+    "edge": {
+      "printsAs": "film-vision3-200t-remjet",
+      "source": "Big Film Database: Lomography CINE200 is Vision3 200T"
+    }
   },
   {
     "id": "film-lomography-lomochrome-classicolor-200",

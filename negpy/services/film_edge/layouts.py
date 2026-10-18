@@ -3,6 +3,14 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from negpy.services.film_edge.barcodes import KEYKODE_MODULE, KEYKODE_MODULES
+from negpy.services.film_edge.geometry import PERF_PHASE, PERF_PITCH
+
+# A mark sits this many cap heights clear of its text.
+MARK_GAP = 0.3
+# SMPTE ST 254 zero-frame dot, 0.64-0.76 mm across.
+KEY_DOT = 0.7
+
 
 class Band(StrEnum):
     TOP = "top"
@@ -15,7 +23,9 @@ class EdgeRun:
 
     `on`: "number" at each frame number's label, "half" at each A label (135 only), or "pitch" every `pitch` mm from
     `at`. `text` is a template over {n} {label} {maker} {text} {code}; an item that renders empty is not printed.
-    `lead`, `trail` and `under` name a mark: "triangle", "outline", "arrow" or "dots"."""
+    `lead`, `trail` and `under` name a mark: "triangle", "outline", "arrow", "dots" or "dot". `char_width` sets a
+    monospaced advance per character. `barcode` ("keykode", "keykode+32") follows each item, `barcode_at` mm on;
+    "index" is a frame-index bar centered on the item's position."""
 
     on: str
     band: Band
@@ -31,6 +41,9 @@ class EdgeRun:
     lead: str = ""
     trail: str = ""
     under: str = ""
+    char_width: float = 0.0
+    barcode: str = ""
+    barcode_at: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -52,6 +65,38 @@ def _numbers_120(lead: str) -> tuple[EdgeRun, ...]:
         EdgeRun("pitch", BOTTOM, "{n}", _CAP_120, _OFFSET_120, at=8.0, pitch=43.0, count=19, lead=lead),
     )
 
+
+# SMPTE ST 254 KEYKODE: a key every 64 perforations (one foot) and a smaller "+32" key half a foot on, each ending in a
+# zero-frame dot centered on a perforation; the barcode after it ends 6 perforations past the dot.
+_FOOT = 64 * PERF_PITCH
+_KEY_DOT_X = PERF_PHASE + 6 * PERF_PITCH
+_DOT_TO_BAR = 6 * PERF_PITCH - KEYKODE_MODULES * KEYKODE_MODULE
+
+
+def _key(text: str, cap: float, char_width: float, dot_x: float, barcode: str) -> EdgeRun:
+    text_to_dot = MARK_GAP * cap + KEY_DOT / 2
+    return EdgeRun(
+        "pitch",
+        BOTTOM,
+        text,
+        cap,
+        at=dot_x - text_to_dot,
+        pitch=_FOOT,
+        first=1000,
+        align="right",
+        trail="dot",
+        char_width=char_width,
+        barcode=barcode,
+        barcode_at=text_to_dot + _DOT_TO_BAR,
+    )
+
+
+_KEYKODE_135 = (
+    _key("{code} {roll} {n:04d}", 1.52, 1.52, _KEY_DOT_X, "keykode"),
+    _key("{code} {roll} {n:04d}+32", 1.0, 0.68, _KEY_DOT_X + _FOOT / 2, "keykode+32"),
+    # Frame-index bars every 4 perforations of each half foot, skipping the ones under a key and its barcode.
+    *(EdgeRun("pitch", BOTTOM, "", 1.0, at=_KEY_DOT_X + m * PERF_PITCH, pitch=_FOOT / 2, barcode="index") for m in (8, 12, 16, 20, 24)),
+)
 
 _KODAK_TOP_135 = (
     EdgeRun("number", TOP, "{n}", 1.2),
@@ -97,7 +142,7 @@ LAYOUTS: dict[str, EdgeLayout] = {
         dx=("color", "bw"),
     ),
     "cine": EdgeLayout(
-        runs_135=(EdgeRun("pitch", TOP, "{maker} {text}", 1.2, at=12.0, pitch=76.0, max_width=60.0),),
+        runs_135=_KEYKODE_135,
         runs_120=_numbers_120("triangle"),
         dx=(),
     ),

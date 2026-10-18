@@ -8,7 +8,8 @@ from typing import Optional, Sequence
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-from negpy.services.film_edge.edge import DX_CLOCK_TRACK, DX_DATA_TRACK, DX_MODULE, Band, EdgeCode, EdgeStyle, EdgeText, edge_items
+from negpy.services.film_edge.barcodes import DX_CLOCK_TRACK
+from negpy.services.film_edge.edge import Band, EdgeCode, EdgeStyle, EdgeText, edge_items
 from negpy.services.film_edge.geometry import (
     PERF_ACROSS,
     PERF_ALONG,
@@ -17,6 +18,7 @@ from negpy.services.film_edge.geometry import (
     FilmGeometry,
     perforation_centers,
 )
+from negpy.services.film_edge.layouts import KEY_DOT, MARK_GAP
 
 RGB = tuple[int, int, int]
 
@@ -122,7 +124,10 @@ class _Band:
         glyphs = Image.new("L", (max(1, int(math.ceil(right_edge - left_edge))), max(1, int(math.ceil(bottom - top)))), 0)
         ImageDraw.Draw(glyphs).text((-left_edge, -top), item.text, font=font, fill=255, anchor="ls", stroke_width=stroke, stroke_fill=255)
         width = glyphs.width
-        if item.max_width and width > item.max_width * s:
+        if item.char_width:
+            glyphs = self._monospaced(item.text, font, stroke, top, glyphs.height, item.char_width * s)
+            width = glyphs.width
+        elif item.max_width and width > item.max_width * s:
             width = max(1, int(round(item.max_width * s)))
             glyphs = glyphs.resize((width, glyphs.height), Image.Resampling.BOX)
         if item.align == "right":
@@ -138,12 +143,30 @@ class _Band:
         self.image.paste(ImageChops.lighter(region, glyphs), box)
         self._marks(item, left, left + width, self.y_of(item.offset), cap_px)
 
+    @staticmethod
+    def _monospaced(
+        text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, stroke: float, top: float, height: int, cell: float
+    ) -> Image.Image:
+        """Each glyph centered in its own `cell` px, narrowed to fit, as the monospaced edge faces of cine stock."""
+        row = Image.new("L", (max(1, int(round(cell * len(text)))), height), 0)
+        for i, char in enumerate(text):
+            if char.isspace():
+                continue
+            left_edge, _top, right_edge, _bottom = font.getbbox(char, anchor="ls", stroke_width=stroke)
+            glyph = Image.new("L", (max(1, int(math.ceil(right_edge - left_edge))), height), 0)
+            ImageDraw.Draw(glyph).text((-left_edge, -top), char, font=font, fill=255, anchor="ls", stroke_width=stroke, stroke_fill=255)
+            if glyph.width > 0.85 * cell:
+                glyph = glyph.resize((max(1, int(0.85 * cell)), height), Image.Resampling.BOX)
+            row.paste(glyph, (int(round((i + 0.5) * cell - glyph.width / 2)), 0))
+        return row
+
     def _marks(self, item: EdgeText, left: float, right: float, center_y: float, cap_px: float) -> None:
-        gap = 0.3 * cap_px
+        gap = MARK_GAP * cap_px
         if item.lead:
             self._mark(item.lead, right_edge=left - gap, center_y=center_y, cap_px=cap_px)
         if item.trail:
-            self._mark(item.trail, right_edge=right + gap + 0.9 * cap_px, center_y=center_y, cap_px=cap_px)
+            size = KEY_DOT * self.s if item.trail == "dot" else 0.9 * cap_px
+            self._mark(item.trail, right_edge=right + gap + size, center_y=center_y, cap_px=cap_px)
         if item.under == "arrow":
             y = self.y_of(0.55)
             self._arrow(left - 0.3 * self.s, right + 0.3 * self.s, y)
@@ -172,6 +195,10 @@ class _Band:
             for k in range(4):
                 cx = right_edge - radius - k * 0.5 * cap_px
                 self.draw.ellipse((cx - radius, center_y - radius, cx + radius, center_y + radius), fill=255)
+        elif kind == "dot":
+            radius = KEY_DOT * self.s / 2
+            cx = right_edge - radius
+            self.draw.ellipse((cx - radius, center_y - radius, cx + radius, center_y + radius), fill=255)
 
     def coverage(self) -> np.ndarray:
         return np.asarray(self.image, dtype=np.float32) / 255.0
@@ -185,7 +212,7 @@ def _draw_code(coverage: np.ndarray, band: _Band, code: EdgeCode, x_px: float, d
     c0, c1 = max(0, start), min(width, end)
     if c1 <= c0:
         return
-    for bits, (near, far) in ((code.data, DX_DATA_TRACK), (code.clock, DX_CLOCK_TRACK)):
+    for (near, far), bits in code.tracks:
         rows = sorted((band.y_of(near), band.y_of(far)))
         r0, r1 = max(0, int(round(rows[0]))), min(coverage.shape[0], int(round(rows[1])))
         if r1 <= r0:
@@ -195,7 +222,7 @@ def _draw_code(coverage: np.ndarray, band: _Band, code: EdgeCode, x_px: float, d
         else:
             oversample = 8
             xs = (np.arange(c0 * oversample, c1 * oversample) + 0.5) / oversample
-            module = np.floor((xs - x_px) / (DX_MODULE * s)).astype(int)
+            module = np.floor((xs - x_px) / (code.module * s)).astype(int)
             valid = (module >= 0) & (module < len(bits))
             on = np.zeros_like(xs, dtype=np.float32)
             on[valid] = np.asarray(bits, np.float32)[module[valid]]
