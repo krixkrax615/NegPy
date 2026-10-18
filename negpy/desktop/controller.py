@@ -16,6 +16,7 @@ from negpy.kernel.system.memory import available_system_memory_bytes
 from negpy.kernel.system.text import count_of, plural
 from negpy.kernel.image.logic import apply_exif_orientation, working_oetf_encode
 from negpy.desktop.auto_sliders import record_meters, shown_values
+from negpy.desktop.card_eye import EYE_CARDS, EYE_LABELS, card_edited, disabled_key, effective_config
 from negpy.desktop.converters import ImageConverter
 from negpy.desktop.file_manager import move_to_trash
 from negpy.desktop.render_memo import RenderMemo
@@ -109,6 +110,7 @@ from negpy.domain.models import (
 from negpy.services.assets.composites import forget_composite, restore_maps, source_files
 from negpy.services.assets.triplets import saved_triplets
 from negpy.services.assets import rolls
+from negpy.services.scanning.capture_info import base_for_exposure, exposure_shift, film_exposure
 from negpy.services.assets.sensor import SensorProfiles
 from negpy.services.export.contact_sheet_layout import ContactSheetSettings
 from negpy.services.export.contact_sheet_roll import (
@@ -531,6 +533,7 @@ class AppController(QObject):
     thumbnail_activity_changed = pyqtSignal(str)
     tool_sync_requested = pyqtSignal()
     config_updated = pyqtSignal()
+    eye_changed = pyqtSignal()
     monitor_profile_changed = pyqtSignal()
     compare_changed = pyqtSignal(bool)
     compare_frame_ready = pyqtSignal()
@@ -798,6 +801,8 @@ class AppController(QObject):
         # (source_hash, memo_key, content_rect) of the on-screen GPU render; load_file
         # files its texture under this on the way out.
         self._last_render_identity: Optional[tuple] = None
+        # (file hash, config) at the last state change, to see which card an edit touched while its eye is off.
+        self._eye_prev: Optional[tuple] = None
         self._expected_render_key = ""
         self._render_memo.large_entries = self.state.hq_preview
         # Test strips, keyed density/grade-blind (see _strip_memo_key). Four mosaics per
@@ -1145,10 +1150,46 @@ class AppController(QObject):
         self.session.session_emptied.connect(self._strip_memo.clear)
         self.session.file_selected.connect(self._on_file_selected_load)
         self.session.state_changed.connect(self.config_updated.emit)
+        self.session.state_changed.connect(self._reenable_eyes_on_edit)
         self.session.state_changed.connect(self._render_if_state_moved)
 
     def _render_state(self) -> tuple:
-        return (self.state.config, self.state.preview_raw, self.state.gpu_enabled, self.state.hq_full_res)
+        return (self.state.config, self.state.preview_raw, self.state.gpu_enabled, self.state.hq_full_res, self.state.disabled_cards)
+
+    def card_eye_off(self, card: str) -> bool:
+        return card in self.state.disabled_cards
+
+    def toggle_card_eye(self, card: str) -> None:
+        """Flip a card's eye: its settings show at their defaults, or come back. A viewing aid only: the
+        edit, history, thumbnails and export never see it."""
+        if card not in EYE_CARDS:
+            return
+        self.state.disabled_cards = self.state.disabled_cards ^ {card}
+        self.eye_changed.emit()
+        self.request_render()
+
+    def clear_card_eyes(self) -> None:
+        if not self.state.disabled_cards:
+            return
+        self.state.disabled_cards = frozenset()
+        self.eye_changed.emit()
+        self.request_render()
+
+    def eye_off_summary(self) -> str:
+        """The cards shown at defaults, by title, for the canvas badge."""
+        names = [EYE_LABELS[c] for c in disabled_key(self.state.disabled_cards)]
+        return "Off: " + ", ".join(names) if names else ""
+
+    def _reenable_eyes_on_edit(self) -> None:
+        """A change to a card's own fields while its eye is off turns the eye back on, so the edit shows."""
+        prev, cur = self._eye_prev, (self.state.current_file_hash, self.state.config)
+        self._eye_prev = cur
+        if not self.state.disabled_cards or prev is None or prev[0] != cur[0] or prev[1] is cur[1]:
+            return
+        touched = {c for c in self.state.disabled_cards if card_edited(prev[1], cur[1], c)}
+        if touched:
+            self.state.disabled_cards = self.state.disabled_cards - touched
+            self.eye_changed.emit()
 
     def _render_if_state_moved(self) -> None:
         """Renders after a session change unless it left every render input as last dispatched:
@@ -2629,6 +2670,7 @@ class AppController(QObject):
             self.state.workspace_color_space,
             self.state.gpu_enabled,
             self.state.soft_proof_enabled,
+            disabled_key(self.state.disabled_cards),
             # The whole condition, so every proof control is part of the identity. Naming
             # the profiles alone would memo-hit across a change of intent or paper white.
             self.proof_profiles(),
@@ -3390,15 +3432,22 @@ class AppController(QObject):
                 base = np.linalg.solve(np.asarray(unmix, dtype=np.float64), base)
             except np.linalg.LinAlgError:
                 pass  # a singular matrix never reaches a render; the unmixed value is the best there is
-        if rolls.set_roll_film_base(self.session.repo, roll_id, tuple(float(v) for v in base)):
+        picked_at = film_exposure(self.state.current_file_path) if self.state.current_file_path else None
+        if rolls.set_roll_film_base(self.session.repo, roll_id, tuple(float(v) for v in base), picked_at):
             self.set_status("Film base set for the roll", 3000)
         else:
             self.set_status("Film Base: this frame's roll is not in the library", 4000, "warning")
         self.set_active_tool(ToolMode.NONE)  # leaving the uncropped tool view re-renders
 
     def roll_film_base(self) -> Optional[tuple]:
-        """The active frame's roll's clear film base, or None."""
-        return rolls.roll_film_base(self.session.repo, self._active_frame_roll())
+        """The active frame's roll's clear film base, or None. A base picked on a frame scanned at another
+        sensor exposure (Auto-exposure gives every frame its own) is shifted to this frame's exposure."""
+        roll_id = self._active_frame_roll()
+        base = rolls.roll_film_base(self.session.repo, roll_id)
+        if base is None:
+            return None
+        path = self.state.current_file_path
+        return base_for_exposure(base, rolls.roll_film_base_exposure(self.session.repo, roll_id), film_exposure(path) if path else None)
 
     def clear_roll_film_base(self) -> None:
         roll_id = self._active_frame_roll()
@@ -5377,13 +5426,14 @@ class AppController(QObject):
                 locked_skipped += 1
                 continue
             rides = f_info["hash"] not in outliers
+            shift = exposure_shift(f_info.get("path"))
             new_process = replace(
                 p.process,
                 use_luma_average=rides,
                 use_color_average=rides,
                 use_cast_average=rides and axis is not None,
-                locked_floors=floors,
-                locked_ceils=ceils,
+                locked_floors=tuple(v + shift for v in floors),
+                locked_ceils=tuple(v + shift for v in ceils),
                 locked_neutral_axis=axis,
                 roll_name=roll_name,
                 baseline_source=source,
@@ -5400,13 +5450,14 @@ class AppController(QObject):
 
         if any(f["hash"] == current for f in targets) and not self.state.config.process.lock_bounds:
             rides = current not in outliers
+            shift = exposure_shift(self.state.current_file_path)
             new_process = replace(
                 self.state.config.process,
                 use_luma_average=rides,
                 use_color_average=rides,
                 use_cast_average=rides and axis is not None,
-                locked_floors=floors,
-                locked_ceils=ceils,
+                locked_floors=tuple(v + shift for v in floors),
+                locked_ceils=tuple(v + shift for v in ceils),
                 locked_neutral_axis=axis,
                 roll_name=roll_name,
                 baseline_source=source,
@@ -5483,7 +5534,8 @@ class AppController(QObject):
         if bounds is None:
             self.set_status("Render this frame before taking its bounds", 3000)
             return
-        floors, ceils = bounds
+        shift = exposure_shift(self.state.current_file_path)  # the roll keeps its baseline at the default exposure
+        floors, ceils = (tuple(v - shift for v in bounds[0]), tuple(v - shift for v in bounds[1]))
         rolls.set_roll_normalization(self.session.repo, roll_id, floors, ceils)
         self.apply_normalization_roll(roll_id)
 
@@ -5984,7 +6036,13 @@ class AppController(QObject):
         config = self._with_card_values(config, card_key, values)
         if card_key == "baseline":
             file_hash = rolls.unforked_hash(self.state.current_file_hash)
-            config = rolls.resolve_roll_baseline(self.session.repo, self.state.active_roll_id, file_hash, config)
+            config = rolls.resolve_roll_baseline(
+                self.session.repo,
+                self.state.active_roll_id,
+                file_hash,
+                config,
+                shift=exposure_shift(self.state.current_file_path),
+            )
         return config
 
     @staticmethod
@@ -7172,7 +7230,8 @@ class AppController(QObject):
         # splash and tool previews are not memoized. Interactive frames are excluded: a proxy
         # render filed under the full-resolution key would be painted back as the real one.
         memo_key = ""
-        if config_override is None and not ephemeral and not crop_preview_full and not interactive:
+        eye_view = config_override is None and bool(self.state.disabled_cards)
+        if config_override is None and not eye_view and not ephemeral and not crop_preview_full and not interactive:
             memo_key = self._render_memo_key()
         self._expected_render_key = memo_key
 
@@ -7180,8 +7239,10 @@ class AppController(QObject):
         cam_xyz, camera_wb = self._effective_cam_xyz()
         task = RenderTask(
             buffer=preview_raw,
-            config=config_override if config_override is not None else self.state.config,
-            config_override=config_override is not None,
+            config=config_override
+            if config_override is not None
+            else effective_config(self.state.config, self.state.disabled_cards),
+            config_override=config_override is not None or eye_view,
             source_hash=self.state.current_file_hash or "preview",
             preview_size=target_size,
             gpu_enabled=self.state.gpu_enabled,
@@ -7201,6 +7262,7 @@ class AppController(QObject):
                 and not ephemeral
                 and not crop_preview_full
                 and config_override is None
+                and not eye_view
                 and self.state.config is not self._thumb_config
             ),
             cam_xyz=cam_xyz,

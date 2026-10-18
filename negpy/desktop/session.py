@@ -44,6 +44,7 @@ from negpy.services.assets.composites import remember_composites
 from negpy.services.assets.triplets import remember_triplets
 from negpy.services.assets.flatfield import FlatFieldProfiles
 from negpy.services.assets import rolls
+from negpy.services.scanning.capture_info import exposure_shift
 from negpy.services.assets import semantic_model
 from negpy.services.assets.rolls import unforked_hash
 from negpy.services.assets.search import facts_for, match, parse_query
@@ -203,6 +204,9 @@ class AppState:
     # With HQ on, a frame loads at preview size and only renders at full size once the view needs
     # more pixels than the preview has (hq_active). Navigating to another frame resets it.
     hq_active: bool = False
+
+    # Cards whose eye is off (card_eye.EYE_CARDS keys): the preview shows them at their defaults. Never saved.
+    disabled_cards: frozenset = frozenset()
 
     @property
     def hq_full_res(self) -> bool:
@@ -1339,7 +1343,7 @@ class DesktopSessionManager(QObject):
             return config
         file_hash = unforked_hash(asset["hash"])
         config = rolls.resolve_roll_config(self.repo, roll_id, file_hash, config)
-        return rolls.resolve_roll_baseline(self.repo, roll_id, file_hash, config)
+        return rolls.resolve_roll_baseline(self.repo, roll_id, file_hash, config, shift=exposure_shift(asset.get("path")))
 
     def load_edit_from_sidecar(self, path: str) -> bool:
         """Replace the active frame's edit with the sidecar at *path*, as an undoable
@@ -1556,7 +1560,9 @@ class DesktopSessionManager(QObject):
             target_path = self.state.uploaded_files[idx]["path"]
             synced = apply_selected_fields(source_config, target_config, rows)
             if src_bounds is not None:
-                floors, ceils = src_bounds
+                # Bounds are in the source scan's exposure; carry them to the target's.
+                carry = exposure_shift(target_path) - exposure_shift(self.state.current_file_path)
+                floors, ceils = (tuple(v + carry for v in src_bounds[0]), tuple(v + carry for v in src_bounds[1]))
                 changes: dict = {"locked_floors": floors, "locked_ceils": ceils, "baseline_source": src_source}
                 if luma:
                     changes["use_luma_average"] = True

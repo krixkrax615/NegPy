@@ -16,11 +16,12 @@ from negpy.features.lab.models import LabConfig
 from negpy.features.altprocess.models import AltProcessConfig
 from negpy.features.toning.models import ToningConfig
 from negpy.features.geometry.logic import has_manual_crop
-from negpy.features.process.models import auto_meter_for_mode, cast_removal_for_mode, invalidate_local_bounds
+from negpy.features.process.models import invalidate_local_bounds
 from negpy.features.finish.models import FinishConfig
 from negpy.features.flatfield.models import FlatFieldConfig
 from negpy.kernel.system.config import DEFAULT_WORKSPACE_CONFIG
 from negpy.services.assets.rolls import ROLL_DEFAULT_FIELDS
+from negpy.desktop.card_eye import EYE_CARDS, default_exposure_field
 from negpy.desktop.settings_catalog import COLOR_FIELDS, DENOISE_FIELDS, FRAME_CARD_FIELDS, GEOMETRY_FIELDS, LAB_FIELDS, PAPER_FIELDS, TONE_FIELDS, frame_card_rows
 from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog
 from negpy.desktop.view.widgets.tab_header import TabHeader
@@ -118,8 +119,6 @@ _DEFAULT_FINISH = FinishConfig()
 _DEFAULT_FLATFIELD = FlatFieldConfig()
 _DEFAULT_CONFIG = DEFAULT_WORKSPACE_CONFIG
 
-_AUTO_METER_FIELDS = ("auto_exposure", "auto_normalize_contrast")
-
 # Roll-tab sections that drive more than one roll card, keyed by section key.
 _SECTION_CARDS: dict[str, tuple[str, ...]] = {
     "optics": ("lens", "flatfield"),
@@ -128,16 +127,7 @@ _SECTION_CARDS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _default_exposure_field(field: str, process_mode: str):
-    """The value *field* defaults to on this frame. Auto Density/Auto Grade
-    (auto_meter_for_mode) and Cast Removal (cast_removal_for_mode) default per mode;
-    every other ExposureConfig field has one flat default."""
-    default = getattr(_DEFAULT_EXPOSURE, field)
-    if field in _AUTO_METER_FIELDS:
-        return auto_meter_for_mode(process_mode, default)
-    if field == "cast_removal_strength":
-        return cast_removal_for_mode(process_mode, default)
-    return default
+_default_exposure_field = default_exposure_field
 
 
 class ControlsPanel(QWidget):
@@ -522,6 +512,11 @@ class ControlsPanel(QWidget):
         self._sync_debounce.timeout.connect(self._sync_all_sidebars)
         self.controller.config_updated.connect(self._sync_debounce.start)
         self.controller.tool_sync_requested.connect(self._sync_tool_buttons)
+        for card in EYE_CARDS:
+            section = getattr(self, f"{card}_section")
+            section.add_eye_toggle()
+            section.eye_clicked.connect(lambda c=card: self.controller.toggle_card_eye(c))
+        self.controller.eye_changed.connect(self._sync_eyes)
         # The histogram only changes on render completion, so refresh there, not on every resync.
         self.controller.image_updated.connect(self._update_histogram)
 
@@ -1270,6 +1265,10 @@ class ControlsPanel(QWidget):
         new_exp = replace(exp, **defaults)
         new_config = replace(cfg, exposure=new_exp)
         self.controller.session.update_config(new_config, persist=True)
+
+    def _sync_eyes(self) -> None:
+        for card in EYE_CARDS:
+            getattr(self, f"{card}_section").set_eye_off(self.controller.card_eye_off(card))
 
     def _sync_modified_dots(self) -> None:
         """Update modified-indicator dots on collapsible section headers."""

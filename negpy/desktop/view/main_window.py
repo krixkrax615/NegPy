@@ -581,6 +581,7 @@ class MainWindow(QMainWindow):
         self.toolbar.btn_toggle_right.clicked.connect(self.toggle_controls_dock)
         self.controller.image_updated.connect(self._on_image_updated)
         self.controller.preview_loaded.connect(self._refresh_image_info)
+        self.controller.eye_changed.connect(self._refresh_eye_note)
         self.controller.loading_started.connect(self._on_loading_started)
         self.controller.gpu_textures_released.connect(self.canvas.release_gpu_texture)
         self.controller.image_updated.connect(self.loading_overlay.stop)
@@ -808,8 +809,12 @@ class MainWindow(QMainWindow):
         )
         self.canvas.update_buffer(buffer, display_cs, content_rect=content_rect, monitor_icc_bytes=monitor_bytes, proof=proof)
 
+    def _refresh_eye_note(self) -> None:
+        self.canvas.hud.set_eye_note(self.controller.eye_off_summary() if self.state.current_file_path else "")
+
     def _refresh_image_info(self) -> None:
         """Updates the canvas HUD corner pills."""
+        self._refresh_eye_note()
         st = self.state
         if not st.current_file_path:
             self.canvas.hud.set_zoom_note("")

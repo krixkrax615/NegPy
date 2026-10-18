@@ -88,7 +88,8 @@ class CanvasHud(QWidget):
         self.lbl_bottom_left = QLabel()
         self.lbl_bottom_right = QLabel()
         self.toast = QLabel()
-        for lbl in (self.lbl_top_left, self.lbl_top_right, self.lbl_bottom_left, self.lbl_bottom_right):
+        self.lbl_eye = QLabel()
+        for lbl in (self.lbl_eye, self.lbl_top_left, self.lbl_top_right, self.lbl_bottom_left, self.lbl_bottom_right):
             lbl.setStyleSheet(_PILL_QSS)
             lbl.hide()
         self.toast.setStyleSheet(toast_qss())
@@ -103,6 +104,7 @@ class CanvasHud(QWidget):
         layout.addWidget(self.lbl_top_left, 0, 0, top | Qt.AlignmentFlag.AlignLeft)
         self.lbl_top_right.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.lbl_top_right, 0, 2, top | Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.lbl_eye, 0, 1, top | Qt.AlignmentFlag.AlignHCenter)
         # Own row so a long toast never squeezes the corner pills.
         layout.addWidget(self.toast, 1, 0, 1, 3, top | Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.lbl_bottom_left, 2, 0, bottom | Qt.AlignmentFlag.AlignLeft)
@@ -144,6 +146,10 @@ class CanvasHud(QWidget):
         self._set_pill(self.lbl_top_left, top_left)
         self._set_pill(self.lbl_top_right, top_right)
         self._set_pill(self.lbl_bottom_left, bottom_left)
+
+    def set_eye_note(self, note: str) -> None:
+        """The cards shown at their defaults, so a compare is never mistaken for the edit."""
+        self._set_pill(self.lbl_eye, note)
 
     def set_zoom_note(self, note: str) -> None:
         """Qualifier for what the canvas shows at this zoom."""

@@ -97,6 +97,8 @@ On a **Roll tab** or **Metadata** card the pair is a latch. On Roll, the card fo
 
 On a **frame** card (Geometry, Filtration, Tone, Lab, Denoise, Alternative Processes, Toning, Retouch, Finishing), **Roll** opens the section's clone picker, to apply your changes to the selection or the whole roll. After a whole-roll apply the card reads Roll until you change a pushed setting. Right-click its header for **Copy Card Settings**; Paste (`Ctrl+V`) then pastes that card alone.
 
+The **eye** in the header of Filtration, Tone, Paper Response, Lab, Denoise, Alternative Processes, Toning, Retouch and Finishing shows the preview with that card's settings at their defaults, and back. It is a viewing aid for A/B compares: the edit, history, thumbnails and export never see it, the canvas lists the cards that are off, and changing a card's setting turns its eye back on. Geometry has no eye, because crop and rotation change the frame itself. The eyes reset when you quit NegPy.
+
 **Reset to Roll**, beside the reset arrow, shows once a card differs from the roll. It puts the roll's values back on the card as one undo step; settings the roll never carried stay.
 
 ### The tab header
@@ -794,7 +796,7 @@ How this frame is measured into a positive's tonal bounds.
 
 *   **Reanalyze Frame**: measures this frame again from its current crop, buffer and region.
 *   **Draw Region**: draw a freehand region to meter *exactly* that area, in place of the buffer. Double-click inside to confirm. The **×** on the button clears it.
-*   **Film Base**: click the clear rebate once to set the roll's film base. The **Negative** row's hover then reads Dmax, Dmed and Dmin above it on every frame of the roll scanned at the same exposure and light as the one you clicked. A click on edge print, a perforation or bare light is refused. Without a base, the rebate is read when the scan shows a film edge, and the hover says so. The **×** on the button clears the base.
+*   **Film Base**: click the clear rebate once to set the roll's film base. The **Negative** row's hover then reads Dmax, Dmed and Dmin above it on every frame of the roll scanned at the same exposure and light as the one you clicked. On scans made with NegPy's Plustek backend the exposure is read from each TIFF's capture line, so Auto-exposure frames (each metered to its own exposure) share the base: it is shifted by the exposure ratio. A click on edge print, a perforation or bare light is refused. Without a base, the rebate is read when the scan shows a film edge, and the hover says so. The **×** on the button clears the base.
 *   **Analysis Buffer** (0.0 to 0.25): insets the measurement window so rebate, sprocket holes and scanner borders do not skew it. With no crop, the window is the picture Auto Crop would keep when the film sits in a holder or on bare light, so the holder never sets the exposure.
 *   **Clipping**: the print's shadow and highlight clipping shares, as in the Analysis panel's row.
 *   **Lock Bounds**: freezes this frame's bounds against crop and slider changes and against every Roll Analysis run.

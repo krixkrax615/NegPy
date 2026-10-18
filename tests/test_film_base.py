@@ -142,3 +142,35 @@ def test_the_tool_is_registered():
 
     assert "film_base" in REGISTRY
     assert any(not isinstance(spec, str) and spec[0] is ToolMode.FILM_BASE for spec in _CANVAS_TOOLS)
+
+
+def test_the_roll_keeps_the_exposure_its_base_was_measured_at():
+    repo, roll_id = _repo_with_roll()
+
+    assert rolls.set_roll_film_base(repo, roll_id, (-0.3, -0.3, -0.3), 28000) is True
+    assert rolls.roll_film_base_exposure(repo, roll_id) == 28000
+    assert rolls.set_roll_film_base(repo, roll_id, None) is True  # clearing drops the exposure too
+    assert rolls.roll_film_base_exposure(repo, roll_id) is None
+
+
+def test_controller_shifts_the_base_to_each_frames_exposure(tmp_path):
+    import math
+    from types import SimpleNamespace
+
+    import tifffile
+
+    from negpy.desktop.controller import AppController
+
+    repo, roll_id = _repo_with_roll()
+    rolls.set_roll_film_base(repo, roll_id, (-0.30, -0.50, -0.80), 28000)
+    frame = tmp_path / "f.tif"
+    tifffile.imwrite(frame, np.zeros((4, 4, 3), np.uint16), description="NegPy Plustek scan: 3600 dpi, 16-bit, auto-exposure 56000")
+    fake = SimpleNamespace(
+        session=SimpleNamespace(repo=repo),
+        _active_frame_roll=lambda: roll_id,
+        state=SimpleNamespace(current_file_path=str(frame)),
+    )
+
+    out = AppController.roll_film_base(fake)
+
+    assert np.allclose(out, np.array([-0.30, -0.50, -0.80]) + math.log10(2.0))

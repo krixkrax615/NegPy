@@ -905,14 +905,23 @@ def roll_film_base(repo: Any, roll_id: Optional[str]) -> Optional[tuple]:
     return tuple(float(v) for v in saved) if saved else None
 
 
-def set_roll_film_base(repo: Any, roll_id: str, base_log: Optional[tuple]) -> bool:
-    """Records the roll's clear film base in raw log space; None clears it. False for an
-    unknown roll id."""
+def roll_film_base_exposure(repo: Any, roll_id: Optional[str]) -> Optional[int]:
+    """The sensor exposure the roll's film base was measured at (a scanned frame's own, from its capture
+    line), or None when unknown."""
+    entry = roll_for_id(repo, roll_id) if roll_id else None
+    saved = entry.get("film_base_exposure") if entry else None
+    return int(saved) if saved else None
+
+
+def set_roll_film_base(repo: Any, roll_id: str, base_log: Optional[tuple], exposure: Optional[int] = None) -> bool:
+    """Records the roll's clear film base in raw log space, with the exposure it was measured at; None
+    clears it. False for an unknown roll id."""
     store = _read(repo)
     entry = store.get(roll_id)
     if entry is None:
         return False
     entry["film_base"] = None if base_log is None else [float(v) for v in base_log]
+    entry["film_base_exposure"] = int(exposure) if base_log is not None and exposure else None
     _write(repo, store)
     return True
 
@@ -1035,10 +1044,13 @@ def next_scene_name(repo: Any, roll_id: Optional[str]) -> str:
     return f"Scene {n}"
 
 
-def resolve_roll_baseline(repo: Any, roll_id: str, file_hash: str, config: "WorkspaceConfig") -> "WorkspaceConfig":
+def resolve_roll_baseline(
+    repo: Any, roll_id: str, file_hash: str, config: "WorkspaceConfig", shift: float = 0.0
+) -> "WorkspaceConfig":
     """A frame riding Use Luma/Color Average without a baseline of its own takes its
     scene's, else the roll's, neutral axis included: a frame loaded after the analysis ran
-    still follows it. A frame that already carries one, or has Lock Bounds on, keeps it."""
+    still follows it. A frame that already carries one, or has Lock Bounds on, keeps it. ``shift`` is the frame's
+    log10 scan exposure over the default one (the roll keeps its baseline at the default exposure)."""
     process = config.process
     if process.lock_bounds or process.is_locked_initialized or not (process.use_luma_average or process.use_color_average):
         return config
@@ -1051,8 +1063,8 @@ def resolve_roll_baseline(repo: Any, roll_id: str, file_hash: str, config: "Work
         config,
         process=replace(
             process,
-            locked_floors=saved["floors"],
-            locked_ceils=saved["ceils"],
+            locked_floors=tuple(float(v) + shift for v in saved["floors"]),
+            locked_ceils=tuple(float(v) + shift for v in saved["ceils"]),
             locked_neutral_axis=saved["axis"],
             baseline_source=source,
         ),

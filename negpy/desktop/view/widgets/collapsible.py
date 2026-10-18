@@ -51,6 +51,7 @@ class CollapsibleSection(QWidget):
     info_requested = pyqtSignal()
     selection_toggled = pyqtSignal(bool)
     scope_selected = pyqtSignal(str)  # "frame" | "roll"
+    eye_clicked = pyqtSignal()
 
     def __init__(
         self,
@@ -124,6 +125,9 @@ class CollapsibleSection(QWidget):
             self.info_btn = header_button(qta.icon("fa5s.info-circle", color=THEME.text_muted), f"What am I looking at? — {title} guide")
             self.info_btn.clicked.connect(self.info_requested)
             btn_layout.addWidget(self.info_btn)
+
+        # Lazily built by add_eye_toggle(): only cards whose settings can show at their defaults have one.
+        self.eye_btn: Optional[QPushButton] = None
 
         self.reset_btn = header_button(qta.icon("fa5s.undo", color=THEME.text_muted), f"Reset {title} to defaults")
         self.reset_btn.setVisible(False)
@@ -253,6 +257,21 @@ class CollapsibleSection(QWidget):
     def set_expanded(self, expanded: bool) -> None:
         if self.collapsible:
             self.toggle_button.setChecked(expanded)
+
+    def add_eye_toggle(self) -> None:
+        """An eye in the header that shows this card's settings at their defaults and back (A/B compare)."""
+        if self.eye_btn is not None:
+            return
+        self.eye_btn = header_button(qta.icon("fa5s.eye", color=THEME.text_muted), "Show/hide this card's settings (A/B compare)")
+        self.eye_btn.clicked.connect(self.eye_clicked)
+        self._header_row.insertWidget(self._header_row.indexOf(self.reset_btn), self.eye_btn)
+
+    def set_eye_off(self, off: bool) -> None:
+        """Mirror the eye state: a slashed eye and a dimmed title while the card's settings are not applied."""
+        if self.eye_btn is None:
+            return
+        self.eye_btn.setIcon(qta.icon("fa5s.eye-slash" if off else "fa5s.eye", color=THEME.text_hint if off else THEME.text_muted))
+        self.title_label.setEnabled(not off)
 
     def add_header_toggle(self, icon_name: str, tooltip: str) -> QPushButton:
         btn = header_button(qta.icon(icon_name, color=THEME.text_muted, color_on=THEME.text_on_accent), tooltip)
