@@ -13,7 +13,7 @@ from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 from negpy.features.geometry.models import AspectRatio, AutocropMode
 from negpy.features.metadata.gear_models import FilmColorType, FilmStock
 from negpy.features.process.models import ProcessMode
-from negpy.services.film_edge.edge import EdgeStyle, edge_family, split_maker
+from negpy.services.film_edge.edge import EdgeStyle, edge_style
 from negpy.services.export.contact_sheet_layout import frame_turns
 from negpy.services.film_edge.layouts import LAYOUTS
 from negpy.services.film_edge.geometry import DEFAULT_FRAME_120, FRAME_SIZES_120, FilmGeometry, SheetFormat
@@ -367,11 +367,12 @@ def sheet_look(frames: Sequence[SheetFrame], fmt: SheetFormat, label: str = "", 
         palette = "slide"
     else:
         palette = "bw"
-    layout = edge_family(stock_name, manufacturer)
-    maker, text = split_maker(stock_name, manufacturer)
-    dx = fmt != SheetFormat.MEDIUM and palette in LAYOUTS[layout].dx
+    stock_id = _majority([f.config.metadata.film_stock_id for f in frames], "")
+    stock = next((_gear_stock(f, library) for f in frames if stock_id and f.config.metadata.film_stock_id == stock_id), None)
+    edge = edge_style(stock, library, stock_name, manufacturer)
+    dx = fmt != SheetFormat.MEDIUM and palette in LAYOUTS[edge.layout].dx
     paper_black = _majority([f.config.exposure.paper_black for f in frames], False)
-    return SheetLook(palette, sheet_black(bool(paper_black)), EdgeStyle(layout, maker, text, dx=dx), label)
+    return SheetLook(palette, sheet_black(bool(paper_black)), replace(edge, dx=dx), label)
 
 
 def roll_label_text(roll_name: str, frames: Sequence[SheetFrame], library: Any = None) -> str:

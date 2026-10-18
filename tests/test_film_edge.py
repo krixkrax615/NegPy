@@ -1,3 +1,4 @@
+from negpy.features.metadata.gear_models import FilmEdge, FilmStock, GearLibrary
 from negpy.services.film_edge.edge import (
     DX_MODULE,
     DX_START,
@@ -8,8 +9,10 @@ from negpy.services.film_edge.edge import (
     ascii_upper,
     dx_bits,
     edge_family,
+    edge_style,
     edge_items,
     label_text,
+    parse_dx,
     split_maker,
 )
 from negpy.services.film_edge.geometry import SheetFormat, film_geometry
@@ -168,3 +171,53 @@ def test_split_maker_takes_a_leading_maker_word_off_the_name():
     assert split_maker("Portra 400", "Kodak") == ("KODAK", "PORTRA 400")
     assert split_maker("Fomapan 100 Classic", "Foma") == ("FOMA", "FOMAPAN 100 CLASSIC")
     assert split_maker("Velvia 50") == ("", "VELVIA 50")
+
+
+def test_parse_dx_reads_only_numbers_the_edge_code_can_carry():
+    assert parse_dx("95-13") == (95, 13)
+    assert parse_dx(" 109 - 9 ") == (109, 9)
+    for text in ("", "95", "0-1", "128-0", "95-16", "a-b", "1533"):
+        assert parse_dx(text) is None, text
+
+
+def test_a_real_dx_number_reaches_the_barcode():
+    style = EdgeStyle("ilford", "ILFORD", "HP5 PLUS", dx=True, dx_number=(109, 9))
+    code = next(i for i in edge_items(FULL, style, 1, 0, 1e9) if isinstance(i, EdgeCode))
+    assert _decode_dx(code.clock, code.data) == (109, 9, "1")
+
+
+def test_catalog_edge_data_beats_the_name_guess():
+    stock = FilmStock(manufacturer="Kodak", stock_name="Vision3 500T", edge=FilmEdge(style="cine", maker="EASTMAN", text="5219"))
+    style = edge_style(stock)
+    assert (style.layout, style.maker, style.text) == ("cine", "EASTMAN", "5219")
+    assert {i.text for i in edge_items(FULL, style, 4, 0, 1e9)} == {"EASTMAN 5219"}
+
+
+def test_the_display_name_never_reaches_the_edge():
+    stock = FilmStock(manufacturer="Kodak", stock_name="Ektacolor Pro 400", display_name="Kodak Ektacolor Pro 400 (formerly Portra 400)")
+    assert (edge_style(stock).maker, edge_style(stock).text) == ("KODAK", "EKTACOLOR PRO 400")
+    stock.edge = FilmEdge(text="PORTRA 400")
+    assert (edge_style(stock).layout, edge_style(stock).text) == ("kodak", "PORTRA 400")
+
+
+def test_a_personal_copy_reads_the_bundled_stock_of_the_same_name():
+    bundled = FilmStock(manufacturer="Ilford", stock_name="HP5 Plus 400", edge=FilmEdge(dx="109-9"), is_bundled=True)
+    personal = FilmStock(manufacturer="ilford", stock_name="hp5 plus 400")
+    assert edge_style(personal, GearLibrary(film_stocks=[bundled, personal])).dx_number == (109, 9)
+    assert edge_style(personal).dx_number is None
+
+
+def test_a_respool_prints_its_source_stock():
+    vision = FilmStock(id="v3", manufacturer="Kodak", stock_name="Vision3 500T", edge=FilmEdge(style="cine", maker="EASTMAN", text="5219"))
+    respool = FilmStock(manufacturer="CineStill", stock_name="800T", edge=FilmEdge(prints_as="v3"))
+    style = edge_style(respool, GearLibrary(film_stocks=[vision, respool]))
+    assert (style.layout, style.maker, style.text) == ("cine", "EASTMAN", "5219")
+
+
+def test_an_unknown_style_prints_the_generic_layout():
+    assert edge_style(FilmStock(stock_name="X", edge=FilmEdge(style="nope"))).layout == "generic"
+
+
+def test_a_free_text_film_name_guesses_the_style():
+    style = edge_style(None, None, "Ilford HP5 Plus", "")
+    assert (style.layout, style.maker, style.text) == ("ilford", "ILFORD", "HP5 PLUS")

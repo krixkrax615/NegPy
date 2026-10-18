@@ -4,8 +4,9 @@ import math
 import unicodedata
 import zlib
 from dataclasses import dataclass
-from typing import Iterator, Optional, Sequence, Union
+from typing import Any, Iterator, Optional, Sequence, Union
 
+from negpy.features.metadata.gear_models import FilmEdge, FilmStock
 from negpy.services.film_edge.geometry import HALF_FRAME_PITCH, FilmGeometry, SheetFormat
 from negpy.services.film_edge.layouts import LAYOUTS, Band, EdgeRun
 
@@ -107,6 +108,48 @@ class EdgeStyle:
             return self.dx_number
         digest = zlib.crc32(f"{self.maker} {self.text}".strip().encode("ascii", "ignore"))
         return 1 + digest % 127, (digest >> 8) % 16
+
+
+def parse_dx(text: str) -> Optional[tuple[int, int]]:
+    """(part1, part2) of "95-13"; None unless both fit the edge code."""
+    part1, sep, part2 = text.partition("-")
+    if not (sep and part1.strip().isdigit() and part2.strip().isdigit()):
+        return None
+    number = int(part1), int(part2)
+    return number if 1 <= number[0] <= 127 and 0 <= number[1] <= 15 else None
+
+
+def edge_style(stock: Optional[FilmStock], library: Any = None, name: str = "", manufacturer: str = "") -> EdgeStyle:
+    """Edge print of a catalog stock; with no stock, guessed from a free-text film name and maker."""
+    if stock is None:
+        maker, text = split_maker(name, manufacturer)
+        return EdgeStyle(edge_family(name, manufacturer), maker, text)
+    owner = _edge_owner(stock, library)
+    edge = owner.edge or FilmEdge()
+    maker, text = split_maker(owner.stock_name, owner.manufacturer)
+    layout = edge.style or edge_family(owner.stock_name, owner.manufacturer)
+    return EdgeStyle(
+        layout if layout in LAYOUTS else GENERIC,
+        edge.maker or maker,
+        edge.text or text,
+        edge.code,
+        dx_number=parse_dx(edge.dx),
+    )
+
+
+def _edge_owner(stock: FilmStock, library: Any) -> FilmStock:
+    """The stock whose edge data applies: a personal copy without its own reads the bundled stock of the same name."""
+    if stock.edge is None:
+        key = (stock.manufacturer.casefold(), stock.stock_name.casefold())
+        for twin in getattr(library, "film_stocks", ()):
+            if twin.is_bundled and twin.edge is not None and (twin.manufacturer.casefold(), twin.stock_name.casefold()) == key:
+                stock = twin
+                break
+    if stock.edge is not None and stock.edge.prints_as and library is not None:
+        source = library.get_film_stock(stock.edge.prints_as)
+        if source is not None:
+            return source
+    return stock
 
 
 def label_text(index: int) -> str:
