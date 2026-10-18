@@ -127,7 +127,11 @@ def test_ilford_prints_its_name_every_frame_and_a_batch_every_third():
 def test_kentmere_prints_no_dx_code():
     items = edge_items(FULL, EdgeStyle("kentmere", "KENTMERE", "PAN 400", dx=True), 6, 0, 1e9)
     assert not any(isinstance(i, EdgeCode) for i in items)
-    assert [i.align for i in items if isinstance(i, EdgeText) and i.band == Band.BOTTOM][:2] == ["center", "center"]
+    bottom = [i for i in items if isinstance(i, EdgeText) and i.band == Band.BOTTOM]
+    assert [i.align for i in bottom][:2] == ["center", "center"]
+    assert bottom[1].lead == "wedge" and bottom[1].x == pytest.approx(FULL.frame_center(0) + 19.0 + 1.0)
+    name = next(i for i in items if isinstance(i, EdgeText) and i.text == "KENTMERE PAN 400")
+    assert name.char_width > 0 and name.x == pytest.approx(FULL.frame_center(0) + 2.5)
 
 
 def test_kodak_gold_swaps_its_word_order_every_frame():
@@ -215,7 +219,7 @@ def test_every_layout_is_well_formed():
                 assert run.on in (("number", "half", "pitch") if fmt == "135" else ("pitch",)), name
                 assert run.on != "pitch" or run.pitch > 0, name
                 assert run.every >= 1 and 0 <= run.phase < run.every, name
-                assert {run.lead, run.trail, run.under} <= {"", "triangle", "outline", "arrow", "dots", "dot"}, name
+                assert {run.lead, run.trail, run.under} <= {"", "triangle", "wedge", "outline", "arrow", "dots", "dot"}, name
                 assert run.barcode in ("", "keykode", "keykode+32", "index"), name
 
 

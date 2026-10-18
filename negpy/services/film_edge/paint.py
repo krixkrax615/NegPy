@@ -181,10 +181,9 @@ class _Band:
     def _mark(self, kind: str, right_edge: float, center_y: float, cap_px: float) -> None:
         size = 0.9 * cap_px
         half = size / 2
-        if kind == "triangle":
-            self.draw.polygon(
-                [(right_edge, center_y), (right_edge - size, center_y - half), (right_edge - size, center_y + half)], fill=255
-            )
+        if kind in ("triangle", "wedge"):
+            back = right_edge - size * (1.75 if kind == "wedge" else 1.0)
+            self.draw.polygon([(right_edge, center_y), (back, center_y - half), (back, center_y + half)], fill=255)
         elif kind == "outline":
             points = [(right_edge, center_y), (right_edge - size, center_y - half), (right_edge - size, center_y + half)]
             self.draw.polygon(points, outline=255, width=max(1, int(round(0.1 * self.s))))

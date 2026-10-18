@@ -24,7 +24,7 @@ class EdgeRun:
     `on`: "number" at each frame number's label, "half" at each A label (135 only), or "pitch" every `pitch` mm from
     `at`; a label run prints where {n} % `every` == `phase`. `text` is a template over {n} {label} {maker} {text}
     {code} {roll} {batch} {lot}; an item that renders empty is not printed.
-    `lead`, `trail` and `under` name a mark: "triangle", "outline", "arrow", "dots" or "dot". `char_width` sets a
+    `lead`, `trail` and `under` name a mark: "triangle", "wedge", "outline", "arrow", "dots" or "dot". `char_width` sets a
     monospaced advance per character. `barcode` ("keykode", "keykode+32") follows each item, `barcode_at` mm on;
     "index" is a frame-index bar centered on the item's position."""
 
@@ -115,12 +115,22 @@ _KODAK_120 = (
     EdgeRun("pitch", BOTTOM, "{n}", _CAP_120, _OFFSET_120, at=20.0, pitch=60.0, count=12, trail="triangle"),
 )
 # The name once a frame near its number, and the emulsion batch ("5048-12", the lot smaller) every third frame.
+_ILFORD_BATCH = (
+    EdgeRun("number", TOP, "{batch}", 1.0, at=20.0, align="right", every=3, phase=2),
+    EdgeRun("number", TOP, "-{lot}", 0.7, offset=1.15, at=20.05, align="left", every=3, phase=2),
+)
 _ILFORD_135 = (
     EdgeRun("number", BOTTOM, "{label}", 1.5),
     EdgeRun("half", BOTTOM, "{label}", 1.1, lead="triangle"),
     EdgeRun("number", TOP, "{maker} {text}", 1.5, at=2.5),
-    EdgeRun("number", TOP, "{batch}", 1.0, at=20.0, align="right", every=3, phase=2),
-    EdgeRun("number", TOP, "-{lot}", 0.7, offset=1.15, at=20.05, align="left", every=3, phase=2),
+    *_ILFORD_BATCH,
+)
+# Measured on a Pan 400 roll: a monospaced name, numbers near the film edge, a long wedge before each A number.
+_KENTMERE_135 = (
+    EdgeRun("number", BOTTOM, "{label}", 1.55, 0.85),
+    EdgeRun("half", BOTTOM, "{label}", 1.05, 0.85, at=1.0, lead="wedge"),
+    EdgeRun("number", TOP, "{maker} {text}", 1.45, 0.95, at=2.5, char_width=1.32),
+    *_ILFORD_BATCH,
 )
 
 LAYOUTS: dict[str, EdgeLayout] = {
@@ -151,8 +161,8 @@ LAYOUTS: dict[str, EdgeLayout] = {
         ),
     ),
     "ilford": EdgeLayout(runs_135=_ILFORD_135, runs_120=_numbers_120("dots"), dx=("color", "bw")),
-    # Ilford's layout without the DX barcode.
-    "kentmere": EdgeLayout(runs_135=_ILFORD_135, runs_120=_numbers_120("dots"), dx=()),
+    # Ilford's batch numbers, no DX barcode.
+    "kentmere": EdgeLayout(runs_135=_KENTMERE_135, runs_120=_numbers_120("dots"), dx=()),
     "cine": EdgeLayout(
         runs_135=_KEYKODE_135,
         runs_120=_numbers_120("triangle"),
