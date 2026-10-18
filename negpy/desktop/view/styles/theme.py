@@ -121,7 +121,7 @@ class ThemeConfig:
     canvas_bg_black: str = "#050505"
     canvas_bg_dark_grey: str = "#1C1C1C"
     canvas_bg_mid_grey: str = "#404040"
-    canvas_bg_white: str = "#FFFFFF"
+    canvas_bg_white: str = "#E6E6E6"
 
     # Status semantic
     status_success: str = "#1D9E75"
