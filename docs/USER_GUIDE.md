@@ -65,7 +65,7 @@ Drag a panel by its top edge to float it; its pin button docks it. **Shift+H** h
 | **Geometry** | Geometry | Crop, straighten, easel movements |
 | **Exposure** | Filtration · Tone · Dodge & Burn | White balance, density, contrast, curve, local burns |
 | **Look** | Lab · Alternative Processes · Toning | Chroma, sharpening, lith, cyanotype, Sabattier, toning |
-| **Denoise** | Denoise | Color noise removal |
+| **Denoise** | Denoise | Color and luminance noise removal |
 | **Finish** | Retouch · Finishing | Dust, vignette, border, carrier |
 | **Favorites** | Your chosen sliders · Presets | Most-used controls, saved edits |
 | **History** | Work prints · Edit history | Named versions, undo trail |
@@ -570,6 +570,7 @@ Chemical toners (B&W Negative only) and a split tint (any mode). On a lith print
 Color noise is the speckle you see in shadows and skin at 100%. It sits on its own **Denoise** tab, between Look and Finish (hidden in B&W Negative).
 
 *   **Chroma Denoise** (0.0 to 5.0, default 0): a luma-guided filter on the color channels. Color follows the picture's brightness, so speckle that has no brightness counterpart averages out, while strong color edges and luminance grain stay. Higher values use a larger window. Start at 1 to 2 for scans, and judge it at 100% zoom. Shortcut: `Alt + 2` / `Alt + Shift + 2`.
+*   **Luma Denoise** (0.0 to 1.0, default 0): an edge-preserving smoothing of luminance. Flat areas calm down and edges and texture stay. 0.2 to 0.4 softens grain lightly; above 0.7 it starts to look painted. Runs on the GPU like Chroma Denoise. Shortcut: `Alt + 4` / `Alt + Shift + 4`.
 *   A luminance denoiser will join it here.
 
 ---

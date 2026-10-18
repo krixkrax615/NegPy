@@ -23,8 +23,8 @@ def test_lab_and_denoise_split_the_lab_config_fields():
     assert FRAME_CARD_FIELDS["denoise"] == DENOISE_FIELDS
 
 
-def test_denoise_card_owns_exactly_the_chroma_denoise_row():
-    assert [r.label for r in frame_card_rows("denoise")] == ["Chroma Denoise"]
+def test_denoise_card_owns_exactly_the_denoise_rows():
+    assert [r.label for r in frame_card_rows("denoise")] == ["Chroma Denoise", "Luma Denoise"]
     assert "Chroma Denoise" not in {r.label for r in frame_card_rows("lab")}
 
 

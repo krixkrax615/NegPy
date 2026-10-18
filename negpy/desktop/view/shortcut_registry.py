@@ -186,6 +186,8 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "separation_inc": ShortcutEntry("Alt+1", "Crosstalk up", "Process"),
     "chroma_denoise_dec": ShortcutEntry("Alt+Shift+2", "Denoise down", "Denoise"),
     "chroma_denoise_inc": ShortcutEntry("Alt+2", "Denoise up", "Denoise"),
+    "luma_denoise_dec": ShortcutEntry("Alt+Shift+4", "Luma denoise down", "Denoise"),
+    "luma_denoise_inc": ShortcutEntry("Alt+4", "Luma denoise up", "Denoise"),
     "saturation_dec": ShortcutEntry("Alt+Shift+3", "Chroma down", "Lab"),
     "saturation_inc": ShortcutEntry("Alt+3", "Chroma up", "Lab"),
     "clahe_dec": ShortcutEntry("Alt+Shift+5", "CLAHE down", "Lab"),

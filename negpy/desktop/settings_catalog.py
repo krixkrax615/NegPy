@@ -206,6 +206,7 @@ CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
     )),
     ("Denoise", (
         _row("Chroma Denoise", "lab", "chroma_denoise", sticky=True),
+        _row("Luma Denoise", "lab", "luma_denoise", sticky=True),
     )),
     ("Alternative Processes", (
         _row("Process", "altproc", "alt_process"),
@@ -463,7 +464,7 @@ LAB_FIELDS = (
     "glow_amount",
     "halation_strength",
 )
-DENOISE_FIELDS = ("chroma_denoise",)
+DENOISE_FIELDS = ("chroma_denoise", "luma_denoise")
 
 # Frame cards whose settings can be pushed to other frames, and the fields each owns. A
 # card keyed by its own config section needs no tuple. Roll-tab cards drive roll defaults

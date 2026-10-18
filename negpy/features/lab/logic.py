@@ -403,6 +403,46 @@ def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 
     return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
 
 
+# Luma Denoise: a self-guided filter (guided filter whose guide is L* itself) smooths L* where it is flat and
+# keeps it where it has structure. Chroma is untouched. ``strength`` is the slider value (0 to 1); the box
+# radius and the regularisation both grow with it.
+LUMA_DENOISE_MIN_STRENGTH = 0.01
+LUMA_GUIDE_RADIUS_BASE = 2.0
+LUMA_GUIDE_RADIUS_PER_STRENGTH = 3.0
+LUMA_GUIDE_EPS_PER_STRENGTH = 6.0
+
+
+def luma_denoise_active(strength: float) -> bool:
+    return strength >= LUMA_DENOISE_MIN_STRENGTH
+
+
+def luma_guide_params(strength: float, scale_factor: float) -> tuple[int, float]:
+    """(box radius in render pixels, eps in L*^2 units) for both engines."""
+    radius = max(1, int(round((LUMA_GUIDE_RADIUS_BASE + LUMA_GUIDE_RADIUS_PER_STRENGTH * strength) * scale_factor)))
+    return radius, float((LUMA_GUIDE_EPS_PER_STRENGTH * strength) ** 2)
+
+
+def self_guided_filter(plane: np.ndarray, radius: int, eps: float) -> np.ndarray:
+    """Guided filter of a one-channel image by itself: slope = var / (var + eps)."""
+    mean = _box_mean(plane, radius)
+    var = np.maximum(_box_mean(plane * plane, radius) - mean * mean, 0.0)
+    slope = var / (var + np.float32(eps))
+    offset = (1.0 - slope) * mean
+    return _box_mean(slope, radius) * plane + _box_mean(offset, radius)
+
+
+def apply_luma_denoise(img: ImageBuffer, strength: float, scale_factor: float = 1.0) -> ImageBuffer:
+    """Edge-preserving smoothing of CIELAB L* (see the constants above); a*/b* stay as they are."""
+    if not luma_denoise_active(strength):
+        return img
+
+    lab = rgb_to_lab_working(img.astype(np.float32))
+    radius, eps = luma_guide_params(strength, scale_factor)
+    lab[:, :, 0] = self_guided_filter(np.ascontiguousarray(lab[:, :, 0]), radius, eps)
+
+    return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
+
+
 # Halation mask threshold in LINEAR reflectance: the regions the negative rendered dense,
 # near paper white on the print. Thresholding linear light keeps the halation footprint
 # fixed by scene exposure instead of moving with grade and density.

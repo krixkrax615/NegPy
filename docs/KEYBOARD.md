@@ -131,6 +131,7 @@ Actions with no default key are not listed; every one of them can still be bound
 | Key | Action |
 |-----|--------|
 | `Alt + 2` / `Alt + Shift + 2` | Increase / decrease **Denoise** (default step 0.01) |
+| `Alt + 4` / `Alt + Shift + 4` | Increase / decrease **Luma Denoise** (default step 0.01) |
 
 ## Lab
 | Key | Action |

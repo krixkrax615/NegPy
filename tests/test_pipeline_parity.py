@@ -526,6 +526,45 @@ class TestLabParity:
                 )
                 _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
 
+    def _denoise_renders(self, chroma: float, luma: float, scale: float, sharpen: float = 0.0, noise: float = 0.03) -> tuple:
+        from negpy.domain.interfaces import PipelineContext
+
+        rng = np.random.default_rng(11)
+        img = np.ascontiguousarray(np.clip(self.img + rng.normal(0, noise, self.img.shape).astype(np.float32), 1e-4, 1.0))
+        s = replace(_make_base_settings(), lab=LabConfig(chroma_denoise=chroma, luma_denoise=luma, sharpen=sharpen))
+        h, w = img.shape[:2]
+        ctx = PipelineContext(original_size=(h, w), scale_factor=scale, process_mode=s.process.process_mode)
+        cpu = np.asarray(self.cpu.process(img, s, f"parity_dn_{chroma}_{luma}_{scale}_{sharpen}", context=ctx))[..., :3]
+        gpu_tex, _ = self.gpu.process_to_texture(img, s, scale_factor=scale, apply_layout=False, readback_metrics=False)
+        return cpu.astype(np.float64), np.asarray(self.gpu._readback_downsampled(gpu_tex))[..., :3].astype(np.float64)
+
+    def test_luma_denoise(self):
+        """Both engines run the same self-guided filter on L* (box radius and eps from luma_guide_params)."""
+        for strength in (0.25, 0.5, 1.0):
+            for scale in (0.5, 1.0):
+                cpu, gpu = self._denoise_renders(0.0, strength, scale)
+                cpu_off, _ = self._denoise_renders(0.0, 0.0, scale)
+                moved = float(np.mean(np.abs(cpu - cpu_off) > 2e-3))
+                assert moved > 0.02, (
+                    f"luma {strength} scale {scale}: denoise moves only {moved:.1%} of values past the tolerance "
+                    "-- a dead mirror would pass"
+                )
+                _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
+
+    def test_luma_denoise_with_chroma_denoise(self):
+        """Chroma then luma, as PhotoLabProcessor orders them. The CPU filters the L* of the chroma-cleaned image and the
+        GPU the L* of the pre-chroma input; they differ only where chroma denoise moves L* through gamut clipping, so the
+        synthetic noise is mild here (the full-size real-scan check agrees to under 1e-4) and a few edge pixels are allowed."""
+        for scale in (0.5, 1.0):
+            cpu, gpu = self._denoise_renders(2.0, 0.5, scale, noise=0.003)
+            _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.005)
+
+    def test_luma_denoise_feeds_sharpening(self):
+        """The CPU sharpens after luma denoise; the GPU's sharpen passes read a luma-denoised copy of the input."""
+        for scale in (0.5, 1.0):
+            cpu, gpu = self._denoise_renders(0.0, 0.5, scale, sharpen=0.5)
+            _assert_mostly_close(cpu, gpu, atol=5e-2, rtol=5e-2, max_violation_frac=0.001)
+
     def _run_and_compare_sharpen(self, settings: WorkspaceConfig, scale: float) -> None:
         """Sharpen-specific harness: both engines get the SAME explicit scale
         factor (the shared _run_and_compare feeds CPU max/1600 vs GPU max/1024,

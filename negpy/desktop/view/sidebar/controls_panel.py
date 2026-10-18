@@ -830,6 +830,13 @@ class ControlsPanel(QWidget):
                 ["chroma_denoise_inc", "chroma_denoise_dec"],
             )
         )
+        self.denoise_sidebar.luma_denoise_slider.setToolTip(
+            tooltip_with_shortcut(
+                "Smooths luminance grain with an edge-preserving filter: flat areas calm down, edges and texture "
+                "stay. High values look painted; a light touch keeps the film feel",
+                ["luma_denoise_inc", "luma_denoise_dec"],
+            )
+        )
         lab.saturation_slider.setToolTip(
             tooltip_with_shortcut(
                 "Linear chroma scale (CIELAB a*/b*) after the print is decoded — a retouching move, "
@@ -1379,7 +1386,9 @@ class ControlsPanel(QWidget):
         self.tone_section.set_modified(tone_count)
         self.paper_section.set_modified(paper_count)
         self.lab_section.set_modified(lab_count)
-        self.denoise_section.set_modified(int(lab.chroma_denoise != _lab.chroma_denoise))
+        self.denoise_section.set_modified(
+            int(lab.chroma_denoise != _lab.chroma_denoise) + int(lab.luma_denoise != _lab.luma_denoise)
+        )
         self.altproc_section.set_modified(altproc_count)
         self.toning_section.set_modified(toning_count)
         self.geometry_section.set_modified(geometry_count)

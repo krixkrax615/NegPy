@@ -12,7 +12,7 @@ struct LabUniforms {
     sharpen_method: f32,
     skin_protection: f32,
     chroma_radius_px: f32,
-    _pad3: f32,
+    luma_denoise: f32,
 };
 
 @group(0) @binding(0) var input_tex: texture_2d<f32>;
@@ -25,6 +25,8 @@ struct LabUniforms {
 @group(0) @binding(4) var chroma_tex: texture_2d<f32>;
 // (guided a*, guided b*) from the chroma_guide_*/chroma_post_* chain. 1x1 dummy when Chroma Denoise is off.
 @group(0) @binding(5) var guided_tex: texture_2d<f32>;
+// (denoised L*, 0, 0, 0) from the luma_guide_* chain. 1x1 dummy when Luma Denoise is off.
+@group(0) @binding(6) var luma_tex: texture_2d<f32>;
 
 // Sharpen constants — mirrored from features/lab/logic.py.
 const SHARPEN_GATE_LO = 0.25;
@@ -340,6 +342,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let guided = textureLoad(guided_tex, coords, 0).xy;
         let ab = guided * (1.0 - keep) + original_edge * keep;
         color = lab_to_rgb(vec3<f32>(current_lab.x, ab.x, ab.y));
+    }
+
+    // 1b. Luma Denoise -- mirrors apply_luma_denoise in logic.py, which runs right after Chroma Denoise: L* is
+    // swapped for the self-guided one, a*/b* stay. luma_tex was filtered from the pre-chroma input, whose L* the
+    // chroma stage does not change.
+    if (params.luma_denoise > 0.0) {
+        var lab_luma = rgb_to_lab(color);
+        lab_luma.x = textureLoad(luma_tex, coords, 0).x;
+        color = lab_to_rgb(lab_luma);
     }
 
     // 2. Global Saturation (CIELAB chroma scaling — preserves L*; gamut-aware

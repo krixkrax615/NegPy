@@ -59,7 +59,15 @@ from negpy.features.geometry.logic import (
     get_manual_rect_coords,
 )
 from negpy.features.geometry.models import GeometryConfig, crops_frame
-from negpy.features.lab.logic import CHROMA_DENOISE_MIN_SIGMA, chroma_denoise_sigma, chroma_guide_params, gaussian_kernel_1d, rl_iterations
+from negpy.features.lab.logic import (
+    CHROMA_DENOISE_MIN_SIGMA,
+    chroma_denoise_sigma,
+    chroma_guide_params,
+    gaussian_kernel_1d,
+    luma_denoise_active,
+    luma_guide_params,
+    rl_iterations,
+)
 from negpy.features.lab.models import SharpenMethod
 from negpy.features.altprocess.models import AltProcess
 from negpy.features.cyanotype.logic import CYANOTYPE_CONSTANTS, sensitizer_constants
@@ -328,6 +336,10 @@ class GPUEngine:
             "chroma_guide_apply_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_apply_v.wgsl")),
             "chroma_post_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_post_h.wgsl")),
             "chroma_post_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_post_v.wgsl")),
+            "luma_guide_box_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "luma_guide_box_h.wgsl")),
+            "luma_guide_coef_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "luma_guide_coef_v.wgsl")),
+            "luma_guide_apply_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "luma_guide_apply_v.wgsl")),
+            "luma_rgb": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "luma_rgb.wgsl")),
             "rl_init": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "rl_init.wgsl")),
             "rl_blur_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "rl_blur_h.wgsl")),
             "rl_div_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "rl_div_v.wgsl")),
@@ -423,6 +435,9 @@ class GPUEngine:
         self._chroma_state_key: Optional[tuple] = None
         # Which pool texture holds the guided a*/b* after the last Chroma Denoise run (the post Gaussian is skipped at tiny sigma).
         self._chroma_guided_label: str = "chroma_gz"
+        # (box radius, eps) of the Luma Denoise filter in luma_gp, and (radius, eps, dims) of the luma textures' content.
+        self._luma_guide_key: Optional[tuple] = None
+        self._luma_state_key: Optional[tuple] = None
 
         # Bind groups reference resources, not contents, so they survive across frames.
         # Cache and reuse them (cleared in cleanup()): about 28 fewer wgpu calls per frame.
@@ -539,6 +554,9 @@ class GPUEngine:
             self._sharpen_state_key = None
         if labels & {"chroma_h", "chroma_v", "chroma_g0", "chroma_gx", "chroma_gy", "chroma_gz"}:
             self._chroma_state_key = None
+        if labels & {"luma_g0", "luma_gx", "luma_gy", "luma_rgb"}:
+            self._luma_state_key = None
+            self._sharpen_state_key = None
         if "contrast_mask" in labels:
             self._mask_tex_key = None
         # Bind groups keyed by id() never match a destroyed view again; drop, don't leak.
@@ -576,6 +594,7 @@ class GPUEngine:
         self._mask_tex_key = None
         self._sharpen_state_key = None
         self._chroma_state_key = None
+        self._luma_state_key = None
 
     def _init_resources(self) -> None:
         """Initializes hardware pipelines and persistent buffers."""
@@ -585,6 +604,7 @@ class GPUEngine:
         self._sharpen_kernel_key = None
         self._chroma_kernel_key = None
         self._chroma_guide_key = None
+        self._luma_guide_key = None
         t0 = time.perf_counter()
         device = self.gpu.device
         self._sampler = device.create_sampler(min_filter="linear", mag_filter="linear")
@@ -614,6 +634,8 @@ class GPUEngine:
         # Guided Chroma Denoise: [box radius, eps, post-Gaussian half-width] and the post-Gaussian taps.
         self._buffers["chroma_gp"] = GPUBuffer(16, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         self._buffers["chroma_post_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
+        # Luma Denoise: [box radius, eps].
+        self._buffers["luma_gp"] = GPUBuffer(16, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # The Mackie-line blur taps, the same helper's, for the Sabattier passes.
         self._buffers["sabattier_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # Filed-carrier jitter profiles are a fixed table, so upload once.
@@ -1369,12 +1391,41 @@ class GPUEngine:
         if start_stage <= 2:
             self._sharpen_state_key = None
             self._chroma_state_key = None
+            self._luma_state_key = None
         if start_stage <= 4:
             # Sharpen state (USM blur or RL deconvolution) feeds the lab pass; a 1x1 dummy keeps binding 3 valid when it is
             # off. The blur reads only its input, radius and kernel, so a lab-only change reuses the last one.
             usage = wgpu.TextureUsage.STORAGE_BINDING | wgpu.TextureUsage.TEXTURE_BINDING
             lab_u = self._get_uniform_binding("lab")
-            sharpen_key = (settings.lab.sharpen_method, float(settings.lab.sharpen_radius), w_rot, h_rot)
+            # Luma Denoise runs first: the sharpen blur reads its denoised L* (the CPU sharpens after it), so the
+            # sharpen passes take a luma-denoised copy of the input when Luma Denoise and Sharpening are both on.
+            luma_on = luma_denoise_active(settings.lab.luma_denoise)
+            sharpen_src = prev_tex
+            if luma_on:
+                luma_radius, luma_eps = luma_guide_params(settings.lab.luma_denoise, scale_factor)
+                tex_l0 = self._get_intermediate_texture(w_rot, h_rot, usage, "luma_g0")
+                tex_lx = self._get_intermediate_texture(w_rot, h_rot, usage, "luma_gx")
+                tex_ly = self._get_intermediate_texture(w_rot, h_rot, usage, "luma_gy")
+                luma_key = (luma_radius, luma_eps, w_rot, h_rot)
+                if luma_key != self._luma_state_key:
+                    lp = self._buffers["luma_gp"]
+                    self._dispatch_pass(enc, "chroma_guide_lab", [(0, prev_tex.view), (1, tex_l0.view)], w_rot, h_rot)
+                    self._dispatch_pass(enc, "luma_guide_box_h", [(0, tex_l0.view), (1, tex_lx.view), (3, lp)], w_rot, h_rot)
+                    self._dispatch_pass(enc, "luma_guide_coef_v", [(0, tex_lx.view), (2, tex_ly.view), (3, lp)], w_rot, h_rot)
+                    self._dispatch_pass(enc, "chroma_guide_coef_h", [(0, tex_ly.view), (1, tex_lx.view), (3, lp)], w_rot, h_rot)
+                    self._dispatch_pass(
+                        enc, "luma_guide_apply_v", [(0, tex_lx.view), (1, tex_l0.view), (2, tex_ly.view), (3, lp)], w_rot, h_rot
+                    )
+                    self._luma_state_key = luma_key
+                    # The sharpen blur's input moved: it must rerun from the denoised copy.
+                    self._sharpen_state_key = None
+                if settings.lab.sharpen > 0:
+                    tex_luma_rgb = self._get_intermediate_texture(w_rot, h_rot, usage, "luma_rgb")
+                    self._dispatch_pass(enc, "luma_rgb", [(0, prev_tex.view), (1, tex_ly.view), (2, tex_luma_rgb.view)], w_rot, h_rot)
+                    sharpen_src = tex_luma_rgb
+            else:
+                tex_ly = self._get_intermediate_texture(1, 1, usage, "luma_gy")
+            sharpen_key = (settings.lab.sharpen_method, float(settings.lab.sharpen_radius), luma_on, w_rot, h_rot)
             blur_current = sharpen_key == self._sharpen_state_key
             if settings.lab.sharpen > 0:
                 self._sharpen_state_key = sharpen_key
@@ -1384,7 +1435,7 @@ class GPUEngine:
                 tex_rl_a = self._get_intermediate_texture(w_rot, h_rot, usage, "rl_a")
                 tex_rl_b = self._get_intermediate_texture(w_rot, h_rot, usage, "rl_b")
                 if not blur_current:
-                    self._dispatch_pass(enc, "rl_init", [(0, prev_tex.view), (1, tex_rl_a.view)], w_rot, h_rot)
+                    self._dispatch_pass(enc, "rl_init", [(0, sharpen_src.view), (1, tex_rl_a.view)], w_rot, h_rot)
                 sk = self._buffers["sharpen_k"]
                 for _ in range(0 if blur_current else rl_iterations(settings.lab.sharpen_radius)):
                     self._dispatch_pass(enc, "rl_blur_h", [(0, tex_rl_a.view), (1, tex_rl_b.view), (2, lab_u), (3, sk)], w_rot, h_rot)
@@ -1398,7 +1449,7 @@ class GPUEngine:
                 if not blur_current:
                     sk = self._buffers["sharpen_k"]
                     self._dispatch_pass(
-                        enc, "lab_sharpen_h", [(0, prev_tex.view), (1, tex_sharpen_h.view), (2, lab_u), (3, sk)], w_rot, h_rot
+                        enc, "lab_sharpen_h", [(0, sharpen_src.view), (1, tex_sharpen_h.view), (2, lab_u), (3, sk)], w_rot, h_rot
                     )
                     self._dispatch_pass(
                         enc, "lab_sharpen_v", [(0, tex_sharpen_h.view), (1, tex_sharpen_v.view), (2, lab_u), (3, sk)], w_rot, h_rot
@@ -1463,6 +1514,7 @@ class GPUEngine:
                     (3, tex_sharpen_v.view),
                     (4, tex_chroma_v.view),
                     (5, tex_guided.view),
+                    (6, tex_ly.view),
                 ],
                 w_rot,
                 h_rot,
@@ -2319,6 +2371,14 @@ class GPUEngine:
                 self._buffers["chroma_gp"].upload(np.array([guide_radius, guide_eps, post_radius, 0.0], dtype=np.float32))
                 self._buffers["chroma_post_k"].upload(np.asarray(post_kernel, dtype=np.float32))
                 self._chroma_guide_key = guide_key
+        luma_strength = 0.0
+        if luma_denoise_active(lab.luma_denoise):
+            luma_strength = float(lab.luma_denoise)
+            luma_radius, luma_eps = luma_guide_params(lab.luma_denoise, scale_factor)
+            luma_key = (luma_radius, luma_eps)
+            if self._luma_guide_key != luma_key:
+                self._buffers["luma_gp"].upload(np.array([luma_radius, luma_eps, 0.0, 0.0], dtype=np.float32))
+                self._luma_guide_key = luma_key
         l_data = struct.pack(
             "ffffffffffff",
             float(lab.sharpen),
@@ -2333,7 +2393,7 @@ class GPUEngine:
             1.0 if lab.sharpen_method == SharpenMethod.RL else 0.0,
             float(lab.skin_protection),
             float(chroma_radius_px),
-            0.0,
+            luma_strength,
         )
 
         is_bw = 1 if settings.process.process_mode == ProcessMode.BW else 0
@@ -3068,6 +3128,10 @@ class GPUEngine:
             guide_radius, _, post_sigma = chroma_guide_params(settings.lab.chroma_denoise, scale_factor)
             post_half = len(gaussian_kernel_1d(post_sigma)) // 2 if post_sigma >= CHROMA_DENOISE_MIN_SIGMA else 0
             halo = max(halo, 2 * guide_radius + post_half + 2)
+        # Luma Denoise chains two box means, as the guided Chroma Denoise does.
+        if luma_denoise_active(settings.lab.luma_denoise):
+            luma_radius, _ = luma_guide_params(settings.lab.luma_denoise, scale_factor)
+            halo = max(halo, 2 * luma_radius + 2)
         # The Mackie-line blur reads its kernel's half-width each side, sigma from the whole
         # frame's short side, so every tile draws the frame's line.
         sabattier_sigma = None

@@ -77,6 +77,16 @@ class TestGpuTiledParity(unittest.TestCase):
             per_column = np.abs(tiled - direct).mean(axis=(0, 2))
             self.assertLess(float(per_column[2030:2070].max()), 1e-4, f"seam at chroma_denoise={strength}")
 
+    def test_a_wide_luma_denoise_leaves_no_tile_seam(self):
+        """Its taps (two self-guided-filter boxes) reach past the fixed tile halo at a large radius."""
+        rng = np.random.default_rng(7)
+        self.img = np.clip(self.img + rng.normal(0, 0.03, self.img.shape).astype(np.float32), 1e-4, 1.0)
+        for strength in (1.0, 25.0):
+            settings = replace(_base(), lab=replace(_base().lab, luma_denoise=strength))
+            tiled, direct = self._tiled(settings), self._direct(settings)
+            per_column = np.abs(tiled - direct).mean(axis=(0, 2))
+            self.assertLess(float(per_column[2030:2070].max()), 1e-4, f"seam at luma_denoise={strength}")
+
     def test_tiled_applies_keystone(self):
         base = _base()
         settings = replace(base, geometry=replace(base.geometry, converge_v=8.0, converge_h=-5.0))

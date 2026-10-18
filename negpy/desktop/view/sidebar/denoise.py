@@ -7,7 +7,8 @@ from negpy.features.process.models import ProcessMode
 class DenoiseSidebar(BaseSidebar):
     """
     Noise removal after the print is decoded. Chroma Denoise is a luma-guided filter on CIELAB a*/b*: colour
-    speckle goes, luminance grain stays. Its value lives on LabConfig.chroma_denoise so saved edits keep working.
+    speckle goes, luminance grain stays. Luma Denoise is an edge-preserving smoothing of L*. Their values live on
+    LabConfig (chroma_denoise, luma_denoise) so saved edits keep working.
     """
 
     def _init_ui(self) -> None:
@@ -25,7 +26,17 @@ class DenoiseSidebar(BaseSidebar):
         )
         self.layout.addWidget(self.chroma_hint)
 
-        # LUMINANCE NOISE goes here: its own header and slider, wired like the chroma one.
+        self.luma_noise_header = section_subheader("LUMINANCE NOISE")
+        self.layout.addWidget(self.luma_noise_header)
+
+        self.luma_denoise_slider = CompactSlider("Luma Denoise", 0.0, 1.0, conf.luma_denoise)
+        self.layout.addWidget(self.luma_denoise_slider)
+
+        self.luma_hint = hint_label(
+            "Smooths grain in flat areas and keeps edges and texture. Light touch first: 0.2-0.4 softens grain, above 0.7 starts to look painted.",
+            "muted",
+        )
+        self.layout.addWidget(self.luma_hint)
 
         self.layout.addStretch()
 
@@ -36,6 +47,12 @@ class DenoiseSidebar(BaseSidebar):
         self.chroma_denoise_slider.valueCommitted.connect(
             lambda v: self.update_config_section("lab", persist=True, readback_metrics=True, chroma_denoise=v)
         )
+        self.luma_denoise_slider.valueChanged.connect(
+            lambda v: self.update_config_section("lab", persist=False, readback_metrics=False, luma_denoise=v)
+        )
+        self.luma_denoise_slider.valueCommitted.connect(
+            lambda v: self.update_config_section("lab", persist=True, readback_metrics=True, luma_denoise=v)
+        )
 
     def sync_ui(self) -> None:
         conf = self.state.config.lab
@@ -44,6 +61,7 @@ class DenoiseSidebar(BaseSidebar):
         self.block_signals(True)
         try:
             self.chroma_denoise_slider.setValue(conf.chroma_denoise)
+            self.luma_denoise_slider.setValue(conf.luma_denoise)
             # Color noise only exists in color: hide the group with its slider in B&W.
             self.color_noise_header.setVisible(not is_bw)
             self.chroma_denoise_slider.setVisible(not is_bw)
@@ -53,3 +71,4 @@ class DenoiseSidebar(BaseSidebar):
 
     def block_signals(self, blocked: bool) -> None:
         self.chroma_denoise_slider.blockSignals(blocked)
+        self.luma_denoise_slider.blockSignals(blocked)
