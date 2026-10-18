@@ -569,13 +569,10 @@ class TestLabParity:
                 _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
 
     def test_luma_denoise_with_chroma_denoise(self):
-        """Chroma then luma, as PhotoLabProcessor orders them. The CPU filters the L* of the chroma-cleaned image and the
-        GPU the L* of the pre-chroma input; they differ only where chroma denoise moves L* through gamut clipping, so the
-        synthetic noise is mild here (the full-size real-scan check agrees to under 1e-4, chroma and luma together) and the
-        saturated synthetic image is allowed a few percent of clipped pixels."""
+        """Both on: PhotoLabProcessor filters both from the same input L*, as the GPU passes do."""
         for scale in (0.5, 1.0):
-            cpu, gpu = self._denoise_renders(2.0, 0.5, scale, noise=0.003)
-            _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.03)
+            cpu, gpu = self._denoise_renders(2.0, 0.5, scale)
+            _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
 
     def test_luma_denoise_feeds_sharpening(self):
         """The CPU sharpens after luma denoise; the GPU's sharpen passes read a luma-denoised copy of the input."""

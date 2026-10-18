@@ -405,16 +405,12 @@ def _edge_band_chroma(ab: np.ndarray, scale_factor: float) -> np.ndarray:
     return cv2.bilateralFilter(padded, diameter, CHROMA_EDGE_RANGE_SIGMA, spatial)[:, :, :2]
 
 
-def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 1.0) -> ImageBuffer:
-    """
-    Luma-guided chroma denoise on CIELAB a*/b* (see the constants above). L* is untouched, so grain stays as
-    luminance. ``radius`` is the slider value (strength).
-    """
+def _denoised_chroma(lab: np.ndarray, radius: float, scale_factor: float) -> np.ndarray | None:
+    """The cleaned a*/b* of a CIELAB image (see the constants above); None when the stage does not run."""
     edge_sigma = chroma_denoise_sigma(radius, scale_factor)
     if edge_sigma == 0.0:
-        return img
+        return None
 
-    lab = rgb_to_lab_working(img.astype(np.float32))
     guide = np.ascontiguousarray(lab[:, :, 0])
     ab = np.ascontiguousarray(lab[:, :, 1:3])
     box_radius, eps, post_sigma = chroma_guide_params(radius, scale_factor)
@@ -428,9 +424,15 @@ def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 
     keep *= 1.0 - chroma_luma_step(cv2.sepFilter2D(guide, -1, k, k), edge_sigma)
     keep = keep[:, :, None]
     edge_chroma = _edge_band_chroma(ab, scale_factor)
-    lab[:, :, 1:3] = out * (1.0 - keep) + edge_chroma * keep
+    return out * (1.0 - keep) + edge_chroma * keep
 
-    return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
+
+def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 1.0) -> ImageBuffer:
+    """
+    Luma-guided chroma denoise on CIELAB a*/b* (see the constants above). L* is untouched, so grain stays as
+    luminance. ``radius`` is the slider value (strength).
+    """
+    return apply_denoise(img, radius, 0.0, scale_factor)
 
 
 # Luma Denoise: a self-guided filter (guided filter whose guide is L* itself) smooths L* where it is flat and
@@ -463,12 +465,28 @@ def self_guided_filter(plane: np.ndarray, radius: int, eps: float) -> np.ndarray
 
 def apply_luma_denoise(img: ImageBuffer, strength: float, scale_factor: float = 1.0) -> ImageBuffer:
     """Edge-preserving smoothing of CIELAB L* (see the constants above); a*/b* stay as they are."""
-    if not luma_denoise_active(strength):
+    return apply_denoise(img, 0.0, strength, scale_factor)
+
+
+def apply_denoise(img: ImageBuffer, chroma_strength: float, luma_strength: float, scale_factor: float = 1.0) -> ImageBuffer:
+    """Chroma Denoise then Luma Denoise. The luma filter reads the undenoised input L*, as the GPU passes do, and
+    its result replaces L* after the chroma step's gamut clip, so the two engines agree with both on."""
+    luma_on = luma_denoise_active(luma_strength)
+    if not luma_on and chroma_denoise_sigma(chroma_strength, scale_factor) == 0.0:
         return img
 
     lab = rgb_to_lab_working(img.astype(np.float32))
-    radius, eps = luma_guide_params(strength, scale_factor)
-    lab[:, :, 0] = self_guided_filter(np.ascontiguousarray(lab[:, :, 0]), radius, eps)
+    luma = None
+    if luma_on:
+        radius, eps = luma_guide_params(luma_strength, scale_factor)
+        luma = self_guided_filter(np.ascontiguousarray(lab[:, :, 0]), radius, eps)
+    chroma = _denoised_chroma(lab, chroma_strength, scale_factor)
+    if chroma is not None:
+        lab[:, :, 1:3] = chroma
+        if luma is not None:
+            lab = rgb_to_lab_working(np.clip(lab_to_rgb_working(lab), 0.0, 1.0).astype(np.float32))
+    if luma is not None:
+        lab[:, :, 0] = luma
 
     return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
 
