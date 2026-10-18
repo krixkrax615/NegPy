@@ -66,7 +66,8 @@ def test_photographed_rolls_print_as_on_the_film(library):
         return edge_style(library.get_film_stock(stock_id), library)
 
     assert (style("film-hp5-400").maker, style("film-hp5-400").text) == ("ILFORD", "HP5 PLUS")
-    assert (style("film-gold-200").layout, style("film-gold-200").text) == ("kodak-alternating", "GB 200-7")
+    gold = style("film-gold-200")
+    assert (gold.layout, gold.text, gold.dx_number) == ("kodak-alternating", "GB 200-7", (96, 12))
     assert style("film-kentmere-400").layout == "kentmere" and style("film-kentmere-400").dx_number is None
     assert [style(s).code for s in ("film-vision3-250d-ahu", "film-vision3-500t-ahu", "film-cinestill-bwxx")] == ["EN", "EJ", "KE"]
 
