@@ -1127,12 +1127,15 @@ def mix_luma_color_bounds(luma_src: LogNegativeBounds, color_src: LogNegativeBou
 # per-channel balance. Fixed rather than scaled to the pool's spread: a roll that mixes two
 # groups has no single spread to scale by.
 POOL_OUTLIER_DISTANCE = 0.3
+# A frame whose luma density range (ceil minus floor) is this far from the median range, in log10, keeps its own
+# bounds too: forcing a roll's range on a flat or very contrasty frame leaves it dark and washed out, or crushed.
+POOL_RANGE_OUTLIER_LOG10 = 0.15
 
 
 def pool_frame_bounds(floors: np.ndarray, ceils: np.ndarray) -> tuple[LogNegativeBounds, np.ndarray]:
     """
     Pools (N, 3) per-frame bounds into one baseline and an outlier mask. Outliers are whole
-    frames whose luma-free color is far from the median (N >= 3 only). A color offset
+    frames whose luma-free color or luma density range is far from the median (N >= 3 only). A color offset
     also shifts luma through G, so the baseline pools the inliers alone: luma is the median
     of their luma-weighted floor and ceil, color the mean of their luma-free offsets. When
     every frame is an outlier, all of them pool.
@@ -1146,6 +1149,8 @@ def pool_frame_bounds(floors: np.ndarray, ceils: np.ndarray) -> tuple[LogNegativ
     outliers = np.zeros(len(chroma), dtype=bool)
     if len(chroma) >= 3:
         outliers = np.linalg.norm(chroma - np.median(chroma, axis=0), axis=1) > POOL_OUTLIER_DISTANCE
+        span = np.maximum(luma_c - luma_f, 1e-3)
+        outliers |= np.abs(np.log10(span / np.median(span))) > POOL_RANGE_OUTLIER_LOG10
     pool = ~outliers if (~outliers).any() else np.ones_like(outliers)
 
     pooled_chroma = chroma[pool].mean(axis=0)

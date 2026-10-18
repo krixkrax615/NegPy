@@ -74,3 +74,22 @@ def test_frames_that_share_no_light_all_flag_and_all_pool():
     pooled, outliers = pool_frame_bounds(floors, ceils)
     assert outliers.all()
     np.testing.assert_allclose(_chroma(pooled.floors, pooled.ceils), np.mean([_chroma(f, c) for f, c in zip(floors, ceils)], axis=0))
+
+
+def test_a_frame_with_a_far_off_density_range_keeps_its_own_bounds():
+    floors = np.array([[-1.2, -1.2, -1.2]] * 5 + [[-0.45, -0.45, -0.45]])
+    ceils = np.array([[-0.1, -0.1, -0.1]] * 6)
+
+    pooled, outliers = pool_frame_bounds(floors, ceils)
+
+    assert outliers.tolist() == [False] * 5 + [True]
+    assert pooled.floors == (-1.2, -1.2, -1.2)
+
+
+def test_frames_with_similar_density_ranges_all_pool():
+    floors = np.array([[-1.2, -1.2, -1.2], [-1.1, -1.1, -1.1], [-1.25, -1.25, -1.25], [-1.15, -1.15, -1.15]])
+    ceils = np.array([[-0.1, -0.1, -0.1]] * 4)
+
+    _, outliers = pool_frame_bounds(floors, ceils)
+
+    assert not outliers.any()
