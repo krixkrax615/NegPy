@@ -1025,7 +1025,7 @@ A darkroom proof of the roll: every visible frame at true size, as cut film stri
 *   **Order**: **Date**, or **Scene**, where each scene starts a new strip.
 *   **Print**: **As Edited**, or **Straight Proof**: the whole roll at one exposure on grade 2 from its Roll Analysis baseline, so thin and dense negatives print light and dark. It needs the roll scanned at one exposure.
 *   **Pick Frames**: click a frame to leave it out or put it back; rejected frames start out.
-*   **Edge Print**: the maker's markings on the film edge (stock name, frame numbers, DX barcode).
+*   **Edge Print**: the maker's markings on the film edge (stock name, frame numbers, DX barcode). A built-in stock prints its own codes and DX number where they are known; other stocks get the maker's usual layout with the stock name.
 *   **Roll Label**: the roll name, film, developer, camera and date above the strips.
 *   **White Paper**: white paper in place of the darkroom black, to save ink on a home printer.
 *   **Film Base** (on): prints the film base black, as a darkroom contact print. Off prints it as paper with the strip outlined, to save more ink.

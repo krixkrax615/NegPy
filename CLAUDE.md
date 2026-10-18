@@ -55,6 +55,8 @@ A card holds the roll's or the rig's values (the film edge, the scanning lens, t
 
 **Gear catalog** (`features/metadata/gear_*.py`, `services/assets/gear_match.py`): bundled reference gear plus the user's own. A new roll's folder name is matched against it by shared words, and by a delimiter-free run for abbreviations. A token with a digit (`portra400`, `hp5`) outranks a plain word, so a subject word beside the stock does not cancel it. More than one candidate at the strongest tier is no match.
 
+**Film edge print** (`services/film_edge/`): the film strip's rebate, edge print and perforations, painted by `paint_strip` for the contact sheet. Maker layouts are the `LAYOUTS` table in `layouts.py`; a stock's own marks, DX number and respool source (`prints_as`) are the `edge` object in `gear/film_stocks.json`, each entry naming its `source`.
+
 ### Pipeline
 
 - **CPU**: `DarkroomEngine.process()` (`negpy/services/rendering/engine.py`): base (geometry + normalization) → exposure (incl. dodge/burn) → clahe → lab → alt process → toning → crop → finish. The first four stages are cached per config-hash via `_run_stage()`; the rest run unconditionally. The base and exposure stages route on `process.path.render_path` (`base_processor` / `exposure_processor` in `engine.py`): `PRINT` runs the negative's processors in `features/exposure/`; `TRANSFER` and `POSITIVE` (a slide as captured, a Positive frame) run `features/transparency/`. The negative's processors hold no slide branch, and `features/exposure/` never imports `features/transparency/` (`tests/test_slide_separation.py`). The alt-process stage (lith, cyanotype or Sabattier, never two) is B&W-only and off by default; when off, both engines skip it instead of running an identity pass.
