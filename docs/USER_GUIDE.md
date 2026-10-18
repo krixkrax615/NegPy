@@ -65,6 +65,7 @@ Drag a panel by its top edge to float it; its pin button docks it. **Shift+H** h
 | **Geometry** | Geometry | Crop, straighten, easel movements |
 | **Exposure** | Filtration · Tone · Dodge & Burn | White balance, density, contrast, curve, local burns |
 | **Look** | Lab · Alternative Processes · Toning | Chroma, sharpening, lith, cyanotype, Sabattier, toning |
+| **Denoise** | Denoise | Color noise removal |
 | **Finish** | Retouch · Finishing | Dust, vignette, border, carrier |
 | **Favorites** | Your chosen sliders · Presets | Most-used controls, saved edits |
 | **History** | Work prints · Edit history | Named versions, undo trail |
@@ -94,7 +95,7 @@ Each section header has **Frame** (amber) and **Roll** (red) beside its reset ar
 
 On a **Roll tab** or **Metadata** card the pair is a latch. On Roll, the card follows the roll and new frames inherit it; an edit flips it to Frame. **Roll** pushes this frame's value to the roll; **Frame** pins it to this frame. Right-click the card header for **Undo Apply to Roll**, which undoes this frame's last push.
 
-On a **frame** card (Geometry, Filtration, Tone, Lab, Alternative Processes, Toning, Retouch, Finishing), **Roll** opens the section's clone picker, to apply your changes to the selection or the whole roll. After a whole-roll apply the card reads Roll until you change a pushed setting. Right-click its header for **Copy Card Settings**; Paste (`Ctrl+V`) then pastes that card alone.
+On a **frame** card (Geometry, Filtration, Tone, Lab, Denoise, Alternative Processes, Toning, Retouch, Finishing), **Roll** opens the section's clone picker, to apply your changes to the selection or the whole roll. After a whole-roll apply the card reads Roll until you change a pushed setting. Right-click its header for **Copy Card Settings**; Paste (`Ctrl+V`) then pastes that card alone.
 
 **Reset to Roll**, beside the reset arrow, shows once a card differs from the roll. It puts the roll's values back on the card as one undo step; settings the roll never carried stay.
 
@@ -497,7 +498,6 @@ What a lab scanner (Frontier or Noritsu) does automatically.
 
 *   **Chroma** (0.0 to 2.0): even color scale after decode; 1.0 is unchanged, 0 grayscale. For print-like saturation use **Dye Separation**.
 *   **Skin Protection** (0.0 to 1.0, default 0.5): caps skin-hued chroma; 1.0 leaves skin matte, 0 is off. Red coats, sunsets and brick stay out; wood, tan leather and sand soften with it.
-*   **Chroma Denoise** (0.0 to 5.0): removes color speckle finer than this radius (px of the full-size scan) and keeps sharp color edges; luminance grain stays.
 
 **Detail:**
 
@@ -563,6 +563,14 @@ Chemical toners (B&W Negative only) and a split tint (any mode). On a lith print
 
 *   **Shadow Strength** (0.0 to 1.0), with **Shadow Hue** (0 to 360°) under it.
 *   **Highlight Strength** (0.0 to 1.0), with **Highlight Hue** (0 to 360°) under it.
+
+<!-- panel:denoise -->
+### 6.4 Denoise: its own tab
+
+Color noise is the speckle you see in shadows and skin at 100%. It sits on its own **Denoise** tab, between Look and Finish (hidden in B&W Negative).
+
+*   **Chroma Denoise** (0.0 to 5.0, default 0): a luma-guided filter on the color channels. Color follows the picture's brightness, so speckle that has no brightness counterpart averages out, while strong color edges and luminance grain stay. Higher values use a larger window. Start at 1 to 2 for scans, and judge it at 100% zoom. Shortcut: `Alt + 2` / `Alt + Shift + 2`.
+*   A luminance denoiser will join it here.
 
 ---
 

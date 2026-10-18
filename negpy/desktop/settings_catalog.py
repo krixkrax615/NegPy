@@ -201,9 +201,11 @@ CATALOG: list[tuple[str, tuple[SettingRow, ...]]] = [
         _row("Sharpen Method", "lab", "sharpen_method", sticky=True),
         _row("Sharpen Radius", "lab", "sharpen_radius", sticky=True),
         _row("Sharpen Masking", "lab", "sharpen_masking", sticky=True),
-        _row("Chroma Denoise", "lab", "chroma_denoise", sticky=True),
         _row("Glow", "lab", "glow_amount", sticky=True),
         _row("Halation", "lab", "halation_strength", sticky=True),
+    )),
+    ("Denoise", (
+        _row("Chroma Denoise", "lab", "chroma_denoise", sticky=True),
     )),
     ("Alternative Processes", (
         _row("Process", "altproc", "alt_process"),
@@ -449,6 +451,20 @@ PAPER_FIELDS = (
     "separation_damping",
 )
 
+# Lab and Denoise share LabConfig: each card owns its own fields of it.
+LAB_FIELDS = (
+    "saturation",
+    "skin_protection",
+    "clahe_strength",
+    "sharpen",
+    "sharpen_method",
+    "sharpen_radius",
+    "sharpen_masking",
+    "glow_amount",
+    "halation_strength",
+)
+DENOISE_FIELDS = ("chroma_denoise",)
+
 # Frame cards whose settings can be pushed to other frames, and the fields each owns. A
 # card keyed by its own config section needs no tuple. Roll-tab cards drive roll defaults
 # instead, and Dodge & Burn has no catalog row: a mask means nothing on the next frame.
@@ -457,7 +473,8 @@ FRAME_CARD_FIELDS: dict[str, tuple | None] = {
     "color": COLOR_FIELDS,
     "tone": TONE_FIELDS,
     "paper": PAPER_FIELDS,
-    "lab": None,
+    "lab": LAB_FIELDS,
+    "denoise": DENOISE_FIELDS,
     "altproc": None,
     "toning": None,
     "retouch": None,

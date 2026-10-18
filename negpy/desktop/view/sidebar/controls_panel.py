@@ -21,7 +21,7 @@ from negpy.features.finish.models import FinishConfig
 from negpy.features.flatfield.models import FlatFieldConfig
 from negpy.kernel.system.config import DEFAULT_WORKSPACE_CONFIG
 from negpy.services.assets.rolls import ROLL_DEFAULT_FIELDS
-from negpy.desktop.settings_catalog import COLOR_FIELDS, FRAME_CARD_FIELDS, GEOMETRY_FIELDS, PAPER_FIELDS, TONE_FIELDS, frame_card_rows
+from negpy.desktop.settings_catalog import COLOR_FIELDS, DENOISE_FIELDS, FRAME_CARD_FIELDS, GEOMETRY_FIELDS, LAB_FIELDS, PAPER_FIELDS, TONE_FIELDS, frame_card_rows
 from negpy.desktop.view.widgets.granular_settings_dialog import open_apply_dialog
 from negpy.desktop.view.widgets.tab_header import TabHeader
 
@@ -41,6 +41,7 @@ from negpy.desktop.view.sidebar.autocrop import AutocropSidebar
 from negpy.desktop.view.sidebar.trichrome import TrichromeSidebar
 from negpy.desktop.view.sidebar.half_frame import HalfFrameSidebar
 from negpy.desktop.view.sidebar.lens import LensSidebar
+from negpy.desktop.view.sidebar.denoise import DenoiseSidebar
 from negpy.desktop.view.sidebar.lab import LabSidebar
 from negpy.desktop.view.sidebar.altprocess import AltProcessSidebar
 from negpy.desktop.view.sidebar.toning import ToningSidebar
@@ -325,6 +326,14 @@ class ControlsPanel(QWidget):
             icon_name="fa5s.flask",
         )
 
+        self.denoise_sidebar = DenoiseSidebar(self.controller)
+        self.denoise_section = self._make_section(
+            "Denoise",
+            "denoise",
+            self.denoise_sidebar,
+            icon_name="fa5s.magic",
+        )
+
         self.altproc_sidebar = AltProcessSidebar(self.controller)
         self.altproc_section = self._make_section(
             "Alternative Processes",
@@ -390,6 +399,13 @@ class ControlsPanel(QWidget):
                 "Look",
                 [self.lab_section, self.altproc_section, self.toning_section],
                 ["lab_section", "altproc_section", "toning_section"],
+            ),
+            (
+                "denoise",
+                "Denoise — Color noise",
+                "Denoise",
+                [self.denoise_section],
+                ["denoise_section"],
             ),
             (
                 "finish",
@@ -512,7 +528,8 @@ class ControlsPanel(QWidget):
         self.color_section.reset_requested.connect(lambda: self._reset_exposure_fields(COLOR_FIELDS))
         self.tone_section.reset_requested.connect(self._reset_tone_fields)
         self.paper_section.reset_requested.connect(lambda: self._reset_exposure_fields(PAPER_FIELDS))
-        self.lab_section.reset_requested.connect(lambda: self.controller.session.reset_section("lab"))
+        self.lab_section.reset_requested.connect(lambda: self._reset_lab_fields(LAB_FIELDS))
+        self.denoise_section.reset_requested.connect(lambda: self._reset_lab_fields(DENOISE_FIELDS))
         self.altproc_section.reset_requested.connect(lambda: self.controller.session.reset_section("altproc"))
         self.toning_section.reset_requested.connect(lambda: self.controller.session.reset_section("toning"))
         self.geometry_section.reset_requested.connect(self._reset_geometry_fields)
@@ -806,9 +823,10 @@ class ControlsPanel(QWidget):
                 ["separation_inc", "separation_dec"],
             )
         )
-        lab.chroma_denoise_slider.setToolTip(
+        self.denoise_sidebar.chroma_denoise_slider.setToolTip(
             tooltip_with_shortcut(
-                "Removes color speckle finer than this radius and keeps color edges; luminance grain stays",
+                "Removes color speckle by fitting color to the picture's brightness inside a window that grows "
+                "with the value, and keeps strong color edges; luminance grain stays",
                 ["chroma_denoise_inc", "chroma_denoise_dec"],
             )
         )
@@ -1015,6 +1033,7 @@ class ControlsPanel(QWidget):
         self.paper_sidebar.sync_ui()
         self.geometry_sidebar.sync_ui()
         self.lab_sidebar.sync_ui()
+        self.denoise_sidebar.sync_ui()
         self.altproc_sidebar.sync_ui()
         self.toning_sidebar.sync_ui()
         self.retouch_sidebar.sync_ui()
@@ -1224,6 +1243,14 @@ class ControlsPanel(QWidget):
             self.controller.set_crop_ratio(default.autocrop_ratio)
         self.controller.set_roll_default(card_key, **{f: getattr(default, f) for f in fields if f != "autocrop_ratio"})
 
+    def _reset_lab_fields(self, fields) -> None:
+        """Reset only the given LabConfig fields: Lab and Denoise share the config section."""
+        from dataclasses import replace
+
+        cfg = self.controller.state.config
+        new_lab = replace(cfg.lab, **{f: getattr(_DEFAULT_LAB, f) for f in fields})
+        self.controller.session.update_config(replace(cfg, lab=new_lab), persist=True)
+
     def _reset_exposure_fields(self, fields) -> None:
         """Reset only the given ExposureConfig fields to defaults (scoped section reset).
         A reset means the value the frame's own defaulting rules would carry, not the
@@ -1259,7 +1286,6 @@ class ControlsPanel(QWidget):
                 lab.saturation != _lab.saturation,
                 lab.clahe_strength != _lab.clahe_strength,
                 lab.sharpen != _lab.sharpen,
-                lab.chroma_denoise != _lab.chroma_denoise,
                 lab.glow_amount != _lab.glow_amount,
                 lab.halation_strength != _lab.halation_strength,
             ]
@@ -1353,6 +1379,7 @@ class ControlsPanel(QWidget):
         self.tone_section.set_modified(tone_count)
         self.paper_section.set_modified(paper_count)
         self.lab_section.set_modified(lab_count)
+        self.denoise_section.set_modified(int(lab.chroma_denoise != _lab.chroma_denoise))
         self.altproc_section.set_modified(altproc_count)
         self.toning_section.set_modified(toning_count)
         self.geometry_section.set_modified(geometry_count)

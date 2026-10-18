@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from PyQt6.QtGui import QIcon
 
-from negpy.desktop.settings_catalog import COLOR_FIELDS, GEOMETRY_FIELDS, rows_for_fields, rows_for_section
+from negpy.desktop.settings_catalog import COLOR_FIELDS, GEOMETRY_FIELDS, LAB_FIELDS, rows_for_fields, rows_for_section
 from negpy.desktop.view.sidebar.controls_panel import ControlsPanel
 from negpy.desktop.view.widgets.collapsible import CollapsibleSection
 from negpy.desktop.view.widgets.tab_header import TabHeader
@@ -116,7 +116,7 @@ def test_apply_offers_every_row_the_tabs_cards_own():
         ControlsPanel._apply_tab(panel, ("geometry", "lab"))
 
     rows = dialog.call_args.kwargs["rows"]
-    assert rows == list(dict.fromkeys(rows_for_fields(GEOMETRY_FIELDS) + rows_for_section("lab")))
+    assert rows == list(dict.fromkeys(rows_for_fields(GEOMETRY_FIELDS) + rows_for_fields(LAB_FIELDS)))
 
 
 def test_apply_leaves_out_a_card_the_mode_retired():
@@ -125,7 +125,7 @@ def test_apply_leaves_out_a_card_the_mode_retired():
     with patch("negpy.desktop.view.sidebar.controls_panel.open_apply_dialog", return_value=None) as dialog:
         ControlsPanel._apply_tab(panel, ("color", "lab"))
 
-    assert dialog.call_args.kwargs["rows"] == rows_for_section("lab")
+    assert dialog.call_args.kwargs["rows"] == rows_for_fields(LAB_FIELDS)
 
 
 def test_a_card_with_no_catalog_rows_travels_with_nothing():

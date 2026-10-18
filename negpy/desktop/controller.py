@@ -5607,6 +5607,7 @@ class AppController(QObject):
         "tone": "Tone",
         "paper": "Paper Response",
         "lab": "Lab",
+        "denoise": "Denoise",
         "altproc": "Alternative Processes",
         "toning": "Toning",
         "retouch": "Retouch",

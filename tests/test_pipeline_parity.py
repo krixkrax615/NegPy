@@ -513,13 +513,18 @@ class TestLabParity:
         return cpu.astype(np.float64), np.asarray(self.gpu._readback_downsampled(gpu_tex))[..., :3].astype(np.float64)
 
     def test_chroma_denoise(self):
-        """Both engines low-pass a*/b* with the same gaussian_kernel_1d taps and apply the same edge test."""
-        for scale in (1.0, 2.5):
-            cpu, gpu = self._chroma_denoise_renders(2.0, scale)
-            cpu_off, _ = self._chroma_denoise_renders(0.0, scale)
-            moved = float(np.mean(np.abs(cpu - cpu_off) > 2e-3))
-            assert moved > 0.02, f"denoise moves only {moved:.1%} of values past the tolerance -- a dead mirror would pass"
-            _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
+        """Both engines run the same luma-guided filter (box radius, eps and post Gaussian from chroma_guide_params)
+        and blend in the original chroma at colour edges found on the same heavy low-pass band."""
+        for strength in (1.0, 3.0, 5.0):
+            for scale in (0.5, 1.0):
+                cpu, gpu = self._chroma_denoise_renders(strength, scale)
+                cpu_off, _ = self._chroma_denoise_renders(0.0, scale)
+                moved = float(np.mean(np.abs(cpu - cpu_off) > 2e-3))
+                assert moved > 0.02, (
+                    f"strength {strength} scale {scale}: denoise moves only {moved:.1%} of values past the tolerance "
+                    "-- a dead mirror would pass"
+                )
+                _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
 
     def _run_and_compare_sharpen(self, settings: WorkspaceConfig, scale: float) -> None:
         """Sharpen-specific harness: both engines get the SAME explicit scale

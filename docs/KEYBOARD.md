@@ -127,10 +127,14 @@ Actions with no default key are not listed; every one of them can still be bound
 | `Alt + E` / `Alt + Shift + E` | Increase / decrease **Color range clip** (default step 1) |
 | `Alt + 1` / `Alt + Shift + 1` | Increase / decrease **Crosstalk** (default step 0.01) |
 
-## Lab
+## Denoise
 | Key | Action |
 |-----|--------|
 | `Alt + 2` / `Alt + Shift + 2` | Increase / decrease **Denoise** (default step 0.01) |
+
+## Lab
+| Key | Action |
+|-----|--------|
 | `Alt + 3` / `Alt + Shift + 3` | Increase / decrease **Chroma** (default step 0.01) |
 | `Alt + 5` / `Alt + Shift + 5` | Increase / decrease **CLAHE** (default step 0.01) |
 | `Alt + 6` / `Alt + Shift + 6` | Increase / decrease **Sharpening** (default step 0.01) |

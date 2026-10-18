@@ -59,7 +59,7 @@ from negpy.features.geometry.logic import (
     get_manual_rect_coords,
 )
 from negpy.features.geometry.models import GeometryConfig, crops_frame
-from negpy.features.lab.logic import chroma_denoise_sigma, gaussian_kernel_1d, rl_iterations
+from negpy.features.lab.logic import CHROMA_DENOISE_MIN_SIGMA, chroma_denoise_sigma, chroma_guide_params, gaussian_kernel_1d, rl_iterations
 from negpy.features.lab.models import SharpenMethod
 from negpy.features.altprocess.models import AltProcess
 from negpy.features.cyanotype.logic import CYANOTYPE_CONSTANTS, sensitizer_constants
@@ -321,6 +321,13 @@ class GPUEngine:
             "lab_sharpen_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "lab_sharpen_v.wgsl")),
             "chroma_lowpass_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_lowpass_h.wgsl")),
             "chroma_lowpass_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_lowpass_v.wgsl")),
+            "chroma_guide_lab": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_lab.wgsl")),
+            "chroma_guide_box_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_box_h.wgsl")),
+            "chroma_guide_coef_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_coef_v.wgsl")),
+            "chroma_guide_coef_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_coef_h.wgsl")),
+            "chroma_guide_apply_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_apply_v.wgsl")),
+            "chroma_post_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_post_h.wgsl")),
+            "chroma_post_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_post_v.wgsl")),
             "rl_init": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "rl_init.wgsl")),
             "rl_blur_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "rl_blur_h.wgsl")),
             "rl_div_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "rl_div_v.wgsl")),
@@ -410,8 +417,12 @@ class GPUEngine:
         self._sharpen_state_key: Optional[tuple] = None
         # The sigma of the Chroma Denoise taps currently in chroma_k.
         self._chroma_kernel_key: Optional[float] = None
+        # (box radius, eps, post sigma) of the guided filter currently in chroma_gp / chroma_post_k.
+        self._chroma_guide_key: Optional[tuple] = None
         # (sigma, dims) of the low-pass in the chroma textures; None once their input moved.
         self._chroma_state_key: Optional[tuple] = None
+        # Which pool texture holds the guided a*/b* after the last Chroma Denoise run (the post Gaussian is skipped at tiny sigma).
+        self._chroma_guided_label: str = "chroma_gz"
 
         # Bind groups reference resources, not contents, so they survive across frames.
         # Cache and reuse them (cleared in cleanup()): about 28 fewer wgpu calls per frame.
@@ -526,7 +537,7 @@ class GPUEngine:
             self._local_ev_key = None
         if labels & {"rl_a", "rl_b", "sharpen_h", "sharpen_v"}:
             self._sharpen_state_key = None
-        if labels & {"chroma_h", "chroma_v"}:
+        if labels & {"chroma_h", "chroma_v", "chroma_g0", "chroma_gx", "chroma_gy", "chroma_gz"}:
             self._chroma_state_key = None
         if "contrast_mask" in labels:
             self._mask_tex_key = None
@@ -573,6 +584,7 @@ class GPUEngine:
         # Buffers are recreated below, so force the next kernel upload.
         self._sharpen_kernel_key = None
         self._chroma_kernel_key = None
+        self._chroma_guide_key = None
         t0 = time.perf_counter()
         device = self.gpu.device
         self._sampler = device.create_sampler(min_filter="linear", mag_filter="linear")
@@ -599,6 +611,9 @@ class GPUEngine:
         self._buffers["sharpen_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # Chroma Denoise low-pass taps, the same helper's.
         self._buffers["chroma_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
+        # Guided Chroma Denoise: [box radius, eps, post-Gaussian half-width] and the post-Gaussian taps.
+        self._buffers["chroma_gp"] = GPUBuffer(16, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
+        self._buffers["chroma_post_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # The Mackie-line blur taps, the same helper's, for the Sabattier passes.
         self._buffers["sabattier_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # Filed-carrier jitter profiles are a fixed table, so upload once.
@@ -1390,23 +1405,54 @@ class GPUEngine:
                     )
             else:
                 tex_sharpen_v = self._get_intermediate_texture(1, 1, usage, "sharpen_v")
-            # The Chroma Denoise low-pass reads only its input and sigma, so a lab-only change reuses it too.
+            # The Chroma Denoise passes read only their input and the slider, so a lab-only change reuses them too.
             chroma_sigma = chroma_denoise_sigma(settings.lab.chroma_denoise, scale_factor)
             if chroma_sigma > 0.0:
+                guide_radius, guide_eps, post_sigma = chroma_guide_params(settings.lab.chroma_denoise, scale_factor)
                 tex_chroma_h = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_h")
                 tex_chroma_v = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_v")
-                chroma_key = (chroma_sigma, w_rot, h_rot)
+                tex_g0 = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_g0")
+                tex_gx = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_gx")
+                tex_gy = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_gy")
+                tex_gz = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_gz")
+                chroma_key = (chroma_sigma, guide_radius, guide_eps, post_sigma, w_rot, h_rot)
                 if chroma_key != self._chroma_state_key:
                     ck = self._buffers["chroma_k"]
+                    gp = self._buffers["chroma_gp"]
+                    pk = self._buffers["chroma_post_k"]
                     self._dispatch_pass(
                         enc, "chroma_lowpass_h", [(0, prev_tex.view), (1, tex_chroma_h.view), (2, lab_u), (3, ck)], w_rot, h_rot
                     )
                     self._dispatch_pass(
                         enc, "chroma_lowpass_v", [(0, tex_chroma_h.view), (1, tex_chroma_v.view), (2, lab_u), (3, ck)], w_rot, h_rot
                     )
+                    # Luma-guided a*/b*: Lab once, box means, per-pixel linear fit, box means of the fit, apply.
+                    self._dispatch_pass(enc, "chroma_guide_lab", [(0, prev_tex.view), (1, tex_g0.view)], w_rot, h_rot)
+                    self._dispatch_pass(
+                        enc, "chroma_guide_box_h", [(0, tex_g0.view), (1, tex_gx.view), (2, tex_gy.view), (3, gp)], w_rot, h_rot
+                    )
+                    self._dispatch_pass(
+                        enc, "chroma_guide_coef_v", [(0, tex_gx.view), (1, tex_gy.view), (2, tex_gz.view), (3, gp)], w_rot, h_rot
+                    )
+                    self._dispatch_pass(enc, "chroma_guide_coef_h", [(0, tex_gz.view), (1, tex_gx.view), (3, gp)], w_rot, h_rot)
+                    self._dispatch_pass(
+                        enc, "chroma_guide_apply_v", [(0, tex_gx.view), (1, tex_g0.view), (2, tex_gy.view), (3, gp)], w_rot, h_rot
+                    )
+                    if post_sigma >= CHROMA_DENOISE_MIN_SIGMA:
+                        self._dispatch_pass(
+                            enc, "chroma_post_h", [(0, tex_gy.view), (1, tex_gx.view), (3, gp), (4, pk)], w_rot, h_rot
+                        )
+                        self._dispatch_pass(
+                            enc, "chroma_post_v", [(0, tex_gx.view), (1, tex_gz.view), (3, gp), (4, pk)], w_rot, h_rot
+                        )
+                        self._chroma_guided_label = "chroma_gz"
+                    else:
+                        self._chroma_guided_label = "chroma_gy"
                     self._chroma_state_key = chroma_key
+                tex_guided = tex_gz if self._chroma_guided_label == "chroma_gz" else tex_gy
             else:
                 tex_chroma_v = self._get_intermediate_texture(1, 1, usage, "chroma_v")
+                tex_guided = self._get_intermediate_texture(1, 1, usage, "chroma_gz")
             self._dispatch_pass(
                 enc,
                 "lab",
@@ -1416,6 +1462,7 @@ class GPUEngine:
                     (2, lab_u),
                     (3, tex_sharpen_v.view),
                     (4, tex_chroma_v.view),
+                    (5, tex_guided.view),
                 ],
                 w_rot,
                 h_rot,
@@ -2264,6 +2311,14 @@ class GPUEngine:
             if self._chroma_kernel_key != chroma_sigma:
                 self._buffers["chroma_k"].upload(chroma_kernel)
                 self._chroma_kernel_key = chroma_sigma
+            guide_radius, guide_eps, post_sigma = chroma_guide_params(lab.chroma_denoise, scale_factor)
+            guide_key = (guide_radius, guide_eps, post_sigma)
+            if self._chroma_guide_key != guide_key:
+                post_kernel = gaussian_kernel_1d(post_sigma) if post_sigma >= CHROMA_DENOISE_MIN_SIGMA else np.ones(1, dtype=np.float32)
+                post_radius = len(post_kernel) // 2
+                self._buffers["chroma_gp"].upload(np.array([guide_radius, guide_eps, post_radius, 0.0], dtype=np.float32))
+                self._buffers["chroma_post_k"].upload(np.asarray(post_kernel, dtype=np.float32))
+                self._chroma_guide_key = guide_key
         l_data = struct.pack(
             "ffffffffffff",
             float(lab.sharpen),
@@ -3009,6 +3064,10 @@ class GPUEngine:
         chroma_sigma = chroma_denoise_sigma(settings.lab.chroma_denoise, scale_factor)
         if chroma_sigma > 0.0:
             halo = max(halo, len(gaussian_kernel_1d(chroma_sigma)) // 2 + 2)
+            # The guided filter chains two box means (2 * radius) and the post Gaussian after them.
+            guide_radius, _, post_sigma = chroma_guide_params(settings.lab.chroma_denoise, scale_factor)
+            post_half = len(gaussian_kernel_1d(post_sigma)) // 2 if post_sigma >= CHROMA_DENOISE_MIN_SIGMA else 0
+            halo = max(halo, 2 * guide_radius + post_half + 2)
         # The Mackie-line blur reads its kernel's half-width each side, sigma from the whole
         # frame's short side, so every tile draws the frame's line.
         sabattier_sigma = None

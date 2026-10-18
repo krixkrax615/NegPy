@@ -311,16 +311,37 @@ def _saturation_block(img: ImageBuffer, saturation: float, skin_protection: floa
     return ensure_image(np.clip(res_rgb, 0.0, 1.0))
 
 
-# Chroma Denoise edge test: the low band's gradient times sigma, in CIELAB a*/b* units. Chroma
-# above the cutoff is kept from LO, fully from HI. Mirrored as WGSL literals in lab.wgsl.
+# Chroma Denoise: a guided filter (He et al.) fits a*/b* as a linear function of L* inside a box window, so
+# colour follows the picture's brightness structure while chroma grain, which has no luma counterpart, averages
+# out. ``strength`` is the slider value; radius, regularisation and the final Gaussian all grow with it.
+# A guided filter smears an edge that has no luma step (red beside green at equal brightness), so those edges
+# are found on a heavily low-passed a*/b* band, which grain cannot trip, and keep their original chroma.
+# The edge test: the low band's gradient times sigma, in CIELAB a*/b* units; chroma is kept from LO, fully from
+# HI. Mirrored as WGSL literals in lab.wgsl.
 CHROMA_EDGE_LO = 1.0
 CHROMA_EDGE_HI = 2.5
-# Below this blur sigma (px) both engines skip the stage.
+CHROMA_EDGE_SIGMA = 6.0
+# Below this blur strength (slider x scale) both engines skip the stage.
 CHROMA_DENOISE_MIN_SIGMA = 0.25
+CHROMA_GUIDE_RADIUS_BASE = 4.0
+CHROMA_GUIDE_RADIUS_PER_STRENGTH = 2.0
+CHROMA_GUIDE_EPS_BASE = 2.0
+CHROMA_GUIDE_EPS_PER_STRENGTH = 6.0
+CHROMA_POST_SIGMA_PER_STRENGTH = 0.8
+
+
+_CENTRAL_DIFF = np.array([[-0.5, 0.0, 0.5]], dtype=np.float32)
+
+
+def chroma_denoise_sigma(radius: float, scale_factor: float) -> float:
+    """The edge-test low-pass sigma in render pixels for both engines; 0.0 when the stage does not run."""
+    if radius * scale_factor < CHROMA_DENOISE_MIN_SIGMA:
+        return 0.0
+    return CHROMA_EDGE_SIGMA * scale_factor
 
 
 def chroma_edge_keep(low_ab: np.ndarray, sigma: float) -> np.ndarray:
-    """How much of the chroma above the cutoff a pixel keeps (0 to 1). Central differences on the
+    """How much of the original chroma a pixel keeps at a colour edge (0 to 1). Central differences on the
     edge-replicated low band, as the shader reads it with clamped coordinates."""
     gx = cv2.filter2D(low_ab, -1, _CENTRAL_DIFF, borderType=cv2.BORDER_REPLICATE)
     gy = cv2.filter2D(low_ab, -1, _CENTRAL_DIFF.T, borderType=cv2.BORDER_REPLICATE)
@@ -333,32 +354,51 @@ def chroma_edge_keep(low_ab: np.ndarray, sigma: float) -> np.ndarray:
     return t * t * (3.0 - 2.0 * t)
 
 
-_CENTRAL_DIFF = np.array([[-0.5, 0.0, 0.5]], dtype=np.float32)
+def chroma_guide_params(strength: float, scale_factor: float) -> tuple[int, float, float]:
+    """(box radius in render pixels, eps in L*^2 units, post-Gaussian sigma) for both engines."""
+    radius = max(1, int(round((CHROMA_GUIDE_RADIUS_BASE + CHROMA_GUIDE_RADIUS_PER_STRENGTH * strength) * scale_factor)))
+    eps = (CHROMA_GUIDE_EPS_BASE + CHROMA_GUIDE_EPS_PER_STRENGTH * strength) ** 2
+    return radius, float(eps), CHROMA_POST_SIGMA_PER_STRENGTH * strength * scale_factor
 
 
-def chroma_denoise_sigma(radius: float, scale_factor: float) -> float:
-    """The low-pass sigma in render pixels for both engines; 0.0 when the stage does not run."""
-    sigma = radius * scale_factor
-    return sigma if sigma >= CHROMA_DENOISE_MIN_SIGMA else 0.0
+def _box_mean(x: np.ndarray, radius: int) -> np.ndarray:
+    k = 2 * radius + 1
+    return cv2.boxFilter(x, -1, (k, k), borderType=cv2.BORDER_REFLECT_101)
+
+
+def guided_filter_ab(guide: np.ndarray, ab: np.ndarray, radius: int, eps: float) -> np.ndarray:
+    """Guided filter of a two-channel image ``ab`` by the one-channel ``guide``."""
+    mean_g = _box_mean(guide, radius)
+    mean_ab = _box_mean(ab, radius)
+    cov = _box_mean(guide[:, :, None] * ab, radius) - mean_g[:, :, None] * mean_ab
+    var = _box_mean(guide * guide, radius) - mean_g * mean_g
+    slope = cov / (np.maximum(var, 0.0)[:, :, None] + np.float32(eps))
+    offset = mean_ab - slope * mean_g[:, :, None]
+    return _box_mean(slope, radius) * guide[:, :, None] + _box_mean(offset, radius)
 
 
 def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 1.0) -> ImageBuffer:
     """
-    Band split of CIELAB a*/b* (Fuji, US 5,739,922): chroma above a Gaussian cutoff is noise or
-    grain, except where it belongs to a color edge. L* is untouched, so grain stays as luminance.
+    Luma-guided chroma denoise on CIELAB a*/b* (see the constants above). L* is untouched, so grain stays as
+    luminance. ``radius`` is the slider value (strength).
     """
-    sigma = chroma_denoise_sigma(radius, scale_factor)
-    if sigma == 0.0:
+    edge_sigma = chroma_denoise_sigma(radius, scale_factor)
+    if edge_sigma == 0.0:
         return img
 
     lab = rgb_to_lab_working(img.astype(np.float32))
+    guide = np.ascontiguousarray(lab[:, :, 0])
     ab = np.ascontiguousarray(lab[:, :, 1:3])
-    k = gaussian_kernel_1d(sigma)
+    box_radius, eps, post_sigma = chroma_guide_params(radius, scale_factor)
+    out = guided_filter_ab(guide, ab, box_radius, eps)
+    if post_sigma >= CHROMA_DENOISE_MIN_SIGMA:
+        k = gaussian_kernel_1d(post_sigma)
+        out = cv2.sepFilter2D(np.ascontiguousarray(out), -1, k, k)
+    k = gaussian_kernel_1d(edge_sigma)
     low = cv2.sepFilter2D(ab, -1, k, k)
-    ab -= low
-    ab *= chroma_edge_keep(low, sigma)[:, :, None]
-    ab += low
-    lab[:, :, 1:3] = ab
+    keep = chroma_edge_keep(low, edge_sigma)[:, :, None]
+    original_edge = low + (ab - low) * keep
+    lab[:, :, 1:3] = out * (1.0 - keep) + original_edge * keep
 
     return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
 

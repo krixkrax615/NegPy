@@ -440,13 +440,24 @@ def build(window: "MainWindow") -> list[TutorialStep]:
             LOOK,
             "Lab",
             "The look after the print. <b>Chroma</b> scales color; <b>Skin Protection</b> keeps faces "
-            "natural. <b>Chroma Denoise</b> removes color noise, not grain. <b>Sharpening</b> acts on "
+            "natural. <b>Sharpening</b> acts on "
             "lightness only. <b>CLAHE</b> adds local contrast. <b>Glow</b> and <b>Halation</b> add lens "
             "bloom and film's red halo.",
             lambda w: cp(w).lab_section,
             task="Drag any Lab slider and watch the print.",
             watch=lambda w: w.state.config.lab,
             guide=("lab", "Lab"),
+            offer=_DEMO,
+        ),
+        step(
+            LOOK,
+            "Denoise",
+            "Its own tab. <b>Chroma Denoise</b> removes color speckle by letting color follow the picture's "
+            "brightness; luminance grain stays. Start at 1 to 2 and zoom to 100% to judge it.",
+            lambda w: cp(w).denoise_section,
+            task="Drag Chroma Denoise and watch shadows and skin at 100%.",
+            watch=lambda w: w.state.config.lab.chroma_denoise,
+            guide=("denoise", "Denoise"),
             offer=_DEMO,
         ),
         step(

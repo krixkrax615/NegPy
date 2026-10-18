@@ -31,6 +31,7 @@ GUIDED_KEYS = (
     "paper",
     "local",
     "lab",
+    "denoise",
     "altproc",
     "toning",
     "retouch",

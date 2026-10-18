@@ -23,6 +23,8 @@ struct LabUniforms {
 @group(0) @binding(3) var sharpen_tex: texture_2d<f32>;
 // (low-pass a*, low-pass b*) from chroma_lowpass_h/v.wgsl. 1x1 dummy when Chroma Denoise is off.
 @group(0) @binding(4) var chroma_tex: texture_2d<f32>;
+// (guided a*, guided b*) from the chroma_guide_*/chroma_post_* chain. 1x1 dummy when Chroma Denoise is off.
+@group(0) @binding(5) var guided_tex: texture_2d<f32>;
 
 // Sharpen constants — mirrored from features/lab/logic.py.
 const SHARPEN_GATE_LO = 0.25;
@@ -125,6 +127,7 @@ const BLOOM_GAUSS_SUM = 27.668145;
 // Chroma Denoise edge test — mirrors CHROMA_EDGE_LO/HI in lab/logic.py.
 const CHROMA_EDGE_LO = 1.0;
 const CHROMA_EDGE_HI = 2.5;
+const CHROMA_EDGE_SIGMA = 6.0;
 
 // Working-space TRC (Adobe RGB: pure 563/256 gamma). Lab is the encoded->linear
 // transition: input samples are decoded; the highlight/sharpen perceptual domain uses the same TRC.
@@ -319,9 +322,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let coords = vec2<i32>(i32(gid.x), i32(gid.y));
     var color = load_lin(coords);
 
-    // 1. Chroma Denoise — mirrors apply_chroma_denoise in logic.py. chroma_tex holds the
-    // low-pass a*/b*; chroma above it is kept only where the low band's own gradient marks
-    // a color edge (central differences, clamped like the CPU's edge-replicated pad).
+    // 1. Chroma Denoise -- mirrors apply_chroma_denoise in logic.py. guided_tex holds the luma-guided a*/b*;
+    // chroma_tex the heavy low-pass a*/b* that finds colour edges (central differences, clamped like the CPU's
+    // edge-replicated pad). At an edge the original chroma is kept (low + keep * (ab - low)), elsewhere the guided one.
     if (params.chroma_radius_px > 0.0) {
         let lo = vec2<i32>(0);
         let hi = vec2<i32>(dims) - 1;
@@ -330,10 +333,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             - textureLoad(chroma_tex, clamp(coords - vec2<i32>(1, 0), lo, hi), 0).xy) * 0.5;
         let gy = (textureLoad(chroma_tex, clamp(coords + vec2<i32>(0, 1), lo, hi), 0).xy
             - textureLoad(chroma_tex, clamp(coords - vec2<i32>(0, 1), lo, hi), 0).xy) * 0.5;
-        let g = sqrt(dot(gx, gx) + dot(gy, gy)) * params.chroma_denoise * params.scale_factor;
+        let g = sqrt(dot(gx, gx) + dot(gy, gy)) * CHROMA_EDGE_SIGMA * params.scale_factor;
         let keep = smoothstep(CHROMA_EDGE_LO, CHROMA_EDGE_HI, g);
         let current_lab = rgb_to_lab(color);
-        let ab = low + keep * (current_lab.yz - low);
+        let original_edge = low + keep * (current_lab.yz - low);
+        let guided = textureLoad(guided_tex, coords, 0).xy;
+        let ab = guided * (1.0 - keep) + original_edge * keep;
         color = lab_to_rgb(vec3<f32>(current_lab.x, ab.x, ab.y));
     }
 

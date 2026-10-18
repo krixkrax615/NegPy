@@ -139,6 +139,7 @@ class ThemeConfig:
             "optics": False,
             "assembly": False,
             "lab": True,
+            "denoise": True,
             "retouch": True,
         }
     )
