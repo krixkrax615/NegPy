@@ -22,7 +22,8 @@ class EdgeRun:
     """One repeating line of edge print.
 
     `on`: "number" at each frame number's label, "half" at each A label (135 only), or "pitch" every `pitch` mm from
-    `at`. `text` is a template over {n} {label} {maker} {text} {code}; an item that renders empty is not printed.
+    `at`; a label run prints where {n} % `every` == `phase`. `text` is a template over {n} {label} {maker} {text}
+    {code} {roll} {batch} {lot}; an item that renders empty is not printed.
     `lead`, `trail` and `under` name a mark: "triangle", "outline", "arrow", "dots" or "dot". `char_width` sets a
     monospaced advance per character. `barcode` ("keykode", "keykode+32") follows each item, `barcode_at` mm on;
     "index" is a frame-index bar centered on the item's position."""
@@ -44,6 +45,8 @@ class EdgeRun:
     char_width: float = 0.0
     barcode: str = ""
     barcode_at: float = 0.0
+    every: int = 1
+    phase: int = 0
 
 
 @dataclass(frozen=True)
@@ -98,23 +101,39 @@ _KEYKODE_135 = (
     *(EdgeRun("pitch", BOTTOM, "", 1.0, at=_KEY_DOT_X + m * PERF_PITCH, pitch=_FOOT / 2, barcode="index") for m in (8, 12, 16, 20, 24)),
 )
 
+_KODAK_LABELS_135 = (
+    EdgeRun("number", BOTTOM, "{label}", 1.4),
+    EdgeRun("half", BOTTOM, "{label}", 0.9, offset=1.4, under="arrow"),
+)
 _KODAK_TOP_135 = (
     EdgeRun("number", TOP, "{n}", 1.2),
     EdgeRun("number", TOP, "{maker} {text}", 1.25, at=15.5, max_width=26.0),
 )
+_KODAK_120 = (
+    EdgeRun("pitch", TOP, "{n}", _CAP_120, _OFFSET_120, at=8.0, pitch=44.5, count=15, first=41),
+    EdgeRun("pitch", TOP, "{maker} {text}", _CAP_120, _OFFSET_120, at=30.25, pitch=89.0, count=8, max_width=36.0),
+    EdgeRun("pitch", BOTTOM, "{n}", _CAP_120, _OFFSET_120, at=20.0, pitch=60.0, count=12, trail="triangle"),
+)
+# The name once a frame near its number, and the emulsion batch ("5048-12", the lot smaller) every third frame.
+_ILFORD_135 = (
+    EdgeRun("number", BOTTOM, "{label}", 1.5),
+    EdgeRun("half", BOTTOM, "{label}", 1.1, lead="triangle"),
+    EdgeRun("number", TOP, "{maker} {text}", 1.5, at=2.5),
+    EdgeRun("number", TOP, "{batch}", 1.0, at=20.0, align="right", every=3, phase=2),
+    EdgeRun("number", TOP, "-{lot}", 0.7, offset=1.15, at=20.05, align="left", every=3, phase=2),
+)
 
 LAYOUTS: dict[str, EdgeLayout] = {
-    "kodak": EdgeLayout(
+    "kodak": EdgeLayout(runs_135=(*_KODAK_LABELS_135, *_KODAK_TOP_135), runs_120=_KODAK_120),
+    # Kodak Gold: the name's word order swaps every frame ("KODAK GB 200-7", "GB 200-7 KODAK").
+    "kodak-alternating": EdgeLayout(
         runs_135=(
-            EdgeRun("number", BOTTOM, "{label}", 1.4),
-            EdgeRun("half", BOTTOM, "{label}", 0.9, offset=1.4, under="arrow"),
-            *_KODAK_TOP_135,
+            *_KODAK_LABELS_135,
+            _KODAK_TOP_135[0],
+            EdgeRun("number", TOP, "{maker} {text}", 1.25, at=15.5, max_width=26.0, every=2, phase=0),
+            EdgeRun("number", TOP, "{text} {maker}", 1.25, at=15.5, max_width=26.0, every=2, phase=1),
         ),
-        runs_120=(
-            EdgeRun("pitch", TOP, "{n}", _CAP_120, _OFFSET_120, at=8.0, pitch=44.5, count=15, first=41),
-            EdgeRun("pitch", TOP, "{maker} {text}", _CAP_120, _OFFSET_120, at=30.25, pitch=89.0, count=8, max_width=36.0),
-            EdgeRun("pitch", BOTTOM, "{n}", _CAP_120, _OFFSET_120, at=20.0, pitch=60.0, count=12, trail="triangle"),
-        ),
+        runs_120=_KODAK_120,
     ),
     "fuji": EdgeLayout(
         runs_135=(
@@ -131,16 +150,9 @@ LAYOUTS: dict[str, EdgeLayout] = {
             EdgeRun("pitch", BOTTOM, "{n}", _CAP_120, _OFFSET_120, at=8.0, pitch=42.0, count=19, align="left", lead="outline"),
         ),
     ),
-    "ilford": EdgeLayout(
-        runs_135=(
-            EdgeRun("number", BOTTOM, "{label}", 1.5),
-            EdgeRun("half", BOTTOM, "{label}", 1.1, lead="triangle"),
-            EdgeRun("pitch", TOP, "{maker}", 1.6, at=12.0, pitch=96.0),
-            EdgeRun("pitch", TOP, "{text}", 1.6, at=60.0, pitch=96.0, max_width=40.0),
-        ),
-        runs_120=_numbers_120("dots"),
-        dx=("color", "bw"),
-    ),
+    "ilford": EdgeLayout(runs_135=_ILFORD_135, runs_120=_numbers_120("dots"), dx=("color", "bw")),
+    # Ilford's layout without the DX barcode.
+    "kentmere": EdgeLayout(runs_135=_ILFORD_135, runs_120=_numbers_120("dots"), dx=()),
     "cine": EdgeLayout(
         runs_135=_KEYKODE_135,
         runs_120=_numbers_120("triangle"),

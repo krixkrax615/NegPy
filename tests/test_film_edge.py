@@ -115,11 +115,25 @@ def test_120_numbers_run_at_their_own_pitch():
     assert not any(isinstance(i, EdgeCode) for i in edge_items(geometry, style, 10, 0, 1e9))
 
 
-def test_ilford_top_band_prints_the_maker_and_product_and_no_numbers():
-    style = EdgeStyle("ilford", "KENTMERE", "400", dx=True)
+def test_ilford_prints_its_name_every_frame_and_a_batch_every_third():
+    style = EdgeStyle("ilford", "ILFORD", "HP5 PLUS", dx=True)
     top = [i.text for i in edge_items(FULL, style, 6, 0, 1e9) if isinstance(i, EdgeText) and i.band == Band.TOP]
-    assert "KENTMERE" in top and "400" in top
-    assert not any(t.isdigit() and t != "400" for t in top)
+    batch, lot = style.batch
+    assert top.count("ILFORD HP5 PLUS") == 6
+    assert top.count(batch) == top.count(f"-{lot}") == 2
+    assert not set(top) & {str(n) for n in range(1, 7)}
+
+
+def test_kentmere_prints_no_dx_code():
+    items = edge_items(FULL, EdgeStyle("kentmere", "KENTMERE", "PAN 400", dx=True), 6, 0, 1e9)
+    assert not any(isinstance(i, EdgeCode) for i in items)
+    assert [i.align for i in items if isinstance(i, EdgeText) and i.band == Band.BOTTOM][:2] == ["center", "center"]
+
+
+def test_kodak_gold_swaps_its_word_order_every_frame():
+    style = EdgeStyle("kodak-alternating", "KODAK", "GB 200-7")
+    names = [i.text for i in edge_items(FULL, style, 4, 0, 1e9) if isinstance(i, EdgeText) and i.band == Band.TOP and "GB" in i.text]
+    assert names == ["GB 200-7 KODAK", "KODAK GB 200-7", "GB 200-7 KODAK", "KODAK GB 200-7"]
 
 
 def test_cine_film_prints_keykode_and_no_frame_numbers():
@@ -160,7 +174,7 @@ def test_code_128_table_and_symbol_structure():
 def test_edge_family():
     assert edge_family("Kodak Portra 400") == "kodak"
     assert edge_family("Ilford HP5 Plus") == "ilford"
-    assert edge_family("Kentmere 400") == "ilford"
+    assert edge_family("Kentmere 400") == "kentmere"
     assert edge_family("Superia 400", "Fujifilm") == "fuji"
     assert edge_family("CineStill 800T") == "cine"
     assert edge_family("Kodak Vision3 250D") == "cine"
@@ -192,7 +206,7 @@ def test_plain_film_prints_nothing_on_its_edges():
 
 
 def test_every_layout_is_well_formed():
-    fields = {"n": 1, "label": "1A", "maker": "M", "text": "T", "code": "C", "roll": "01 2345"}
+    fields = {"n": 1, "label": "1A", "maker": "M", "text": "T", "code": "C", "roll": "01 2345", "batch": "5048", "lot": "12"}
     for name, layout in LAYOUTS.items():
         assert set(layout.dx) <= {"color", "bw"}, name
         for fmt, runs in (("135", layout.runs_135), ("120", layout.runs_120)):
@@ -200,6 +214,7 @@ def test_every_layout_is_well_formed():
                 run.text.format(**fields)
                 assert run.on in (("number", "half", "pitch") if fmt == "135" else ("pitch",)), name
                 assert run.on != "pitch" or run.pitch > 0, name
+                assert run.every >= 1 and 0 <= run.phase < run.every, name
                 assert {run.lead, run.trail, run.under} <= {"", "triangle", "outline", "arrow", "dots", "dot"}, name
                 assert run.barcode in ("", "keykode", "keykode+32", "index"), name
 

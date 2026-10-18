@@ -84,6 +84,8 @@ def edge_family(stock: str, manufacturer: str = "") -> str:
         return "cine"
     if "kodak" in text:
         return "kodak"
+    if "kentmere" in text:
+        return "kentmere"
     if any(maker.lower() in text for maker in _ILFORD_MAKERS):
         return "ilford"
     if "fuji" in text:
@@ -125,6 +127,12 @@ class EdgeStyle:
         """Stand-in 6-digit roll prefix of a KEYKODE key, as "07 6163"."""
         digits = f"{self._digest() % 1_000_000:06d}"
         return f"{digits[:2]} {digits[2:]}"
+
+    @property
+    def batch(self) -> tuple[str, str]:
+        """Stand-in emulsion batch and lot, as "5048" and "12"."""
+        digest = self._digest() >> 4
+        return f"{1000 + digest % 9000}", f"{10 + (digest >> 14) % 90}"
 
     def _digest(self) -> int:
         return zlib.crc32(f"{self.maker} {self.text}".strip().encode("ascii", "ignore"))
@@ -190,7 +198,8 @@ def edge_items(
     if not style.printed:
         return []
     layout = LAYOUTS.get(style.layout, LAYOUTS[GENERIC])
-    fields = {"maker": style.maker, "text": style.text, "code": style.code or style.text, "roll": style.roll}
+    batch, lot = style.batch
+    fields = {"maker": style.maker, "text": style.text, "code": style.code or style.text, "roll": style.roll, "batch": batch, "lot": lot}
     items: list[EdgeItem] = []
     if geometry.format == SheetFormat.MEDIUM:
         runs = layout.runs_120
@@ -201,7 +210,7 @@ def edge_items(
         for x, j in _label_slots(geometry, slots[:frame_count]):
             number, is_a = j // 2 + 1, bool(j % 2)
             for run in runs:
-                if run.on != ("half" if is_a else "number"):
+                if run.on != ("half" if is_a else "number") or number % run.every != run.phase:
                     continue
                 anchor, align = x + run.at, run.align
                 if dx and run.band == Band.BOTTOM:

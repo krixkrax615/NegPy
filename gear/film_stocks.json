@@ -12,7 +12,7 @@
       "style": "kodak",
       "text": "PORTRA 400",
       "dx": "95-13",
-      "source": "text: havecamerawilltravel.com Kodak edge codes; DX: Big Film Database (Portra 400, 2010)"
+      "source": "text and layout: photo of a Portra 400 roll; DX: Big Film Database (Portra 400, 2010)"
     }
   },
   {
@@ -56,10 +56,10 @@
     "colorType": "ColorNegative",
     "notes": "Consumer color negative; cubic grain, warm bias with amber highlights, olive greens and teal-leaning shadows.",
     "edge": {
-      "style": "kodak",
-      "text": "GB 200",
+      "style": "kodak-alternating",
+      "text": "GB 200-7",
       "dx": "96-12",
-      "source": "text and DX: Big Film Database (Gold 200 GB 200-7)"
+      "source": "text and layout: photo of a Gold 200 roll; DX: Big Film Database (Gold 200 GB 200-7)"
     }
   },
   {
@@ -135,8 +135,9 @@
     "colorType": "B&W Negative",
     "notes": "Classic cubic-grain B&W; more linear than Tri-X with less shoulder, defined grain, wide latitude, pushes well.",
     "edge": {
+      "text": "HP5 PLUS",
       "dx": "109-9",
-      "source": "DX: Big Film Database (HP5 Plus)"
+      "source": "text: photo of an HP5 Plus roll; DX: Big Film Database (HP5 Plus)"
     }
   },
   {
@@ -247,8 +248,8 @@
     "colorType": "B&W Negative",
     "notes": "Budget cubic-grain B&W from Harman; FP4-class technology with less silver.",
     "edge": {
-      "dx": "110-10",
-      "source": "DX: Big Film Database (Kentmere Pan 100)"
+      "style": "kentmere",
+      "source": "the Kentmere Pan line, from a photo of a Pan 400 roll"
     }
   },
   {
@@ -259,7 +260,11 @@
     "iso": 200,
     "format": "35mm",
     "colorType": "B&W Negative",
-    "notes": "Budget cubic-grain B&W from Harman; higher contrast, clear base with reduced antihalation so bright specular lights halate."
+    "notes": "Budget cubic-grain B&W from Harman; higher contrast, clear base with reduced antihalation so bright specular lights halate.",
+    "edge": {
+      "style": "kentmere",
+      "source": "the Kentmere Pan line, from a photo of a Pan 400 roll"
+    }
   },
   {
     "id": "film-kentmere-400",
@@ -271,8 +276,8 @@
     "colorType": "B&W Negative",
     "notes": "Budget cubic-grain B&W from Harman; HP5-class technology with less silver.",
     "edge": {
-      "dx": "110-10",
-      "source": "DX: Big Film Database (Kentmere Pan 400)"
+      "style": "kentmere",
+      "source": "photo of a Kentmere Pan 400 roll: Ilford-style edge, no DX barcode"
     }
   },
   {

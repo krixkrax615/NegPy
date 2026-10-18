@@ -61,6 +61,16 @@ def test_a_renamed_kodak_stock_prints_its_legacy_mark(library):
     assert edge_style(library.get_film_stock("film-ektapan-400"), library).text == "400TMY"
 
 
+def test_photographed_rolls_print_as_on_the_film(library):
+    def style(stock_id):
+        return edge_style(library.get_film_stock(stock_id), library)
+
+    assert (style("film-hp5-400").maker, style("film-hp5-400").text) == ("ILFORD", "HP5 PLUS")
+    assert (style("film-gold-200").layout, style("film-gold-200").text) == ("kodak-alternating", "GB 200-7")
+    assert style("film-kentmere-400").layout == "kentmere" and style("film-kentmere-400").dx_number is None
+    assert [style(s).code for s in ("film-vision3-250d-ahu", "film-vision3-500t-ahu", "film-cinestill-bwxx")] == ["EN", "EJ", "KE"]
+
+
 @pytest.mark.parametrize(
     "folder, stock_id",
     [
