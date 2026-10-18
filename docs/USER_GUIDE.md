@@ -168,7 +168,7 @@ The **⋮** menu on the Film Strip header:
 *   **Close Roll…** (**Unload All…** when the frames are not a roll): empties the film strip; edits stay saved.
 *   **Reset Roll to Defaults…**: **Reset Settings** on every visible frame, each an undo step.
 
-The grid button on the same header opens the **Light Table** (`Shift+G`): the roll as a full-window grid for culling, with the same selection, marks and menus. **Esc** or `Shift+G` goes back.
+The grid button on the same header opens the **Light Table** (`Shift+G`): the roll as strips of film on a white light table for culling, with the same selection, marks and menus. Each strip carries the edge print and perforations of the film stock and format set in the Metadata card, and each frame lies as it does on the film. **Esc** or `Shift+G` goes back.
 
 The Film Strip button row:
 

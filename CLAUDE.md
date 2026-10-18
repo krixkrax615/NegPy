@@ -55,7 +55,7 @@ A card holds the roll's or the rig's values (the film edge, the scanning lens, t
 
 **Gear catalog** (`features/metadata/gear_*.py`, `services/assets/gear_match.py`): bundled reference gear plus the user's own. A new roll's folder name is matched against it by shared words, and by a delimiter-free run for abbreviations. A token with a digit (`portra400`, `hp5`) outranks a plain word, so a subject word beside the stock does not cancel it. More than one candidate at the strongest tier is no match.
 
-**Film edge print** (`services/film_edge/`): the film strip's rebate, edge print and perforations, painted by `paint_strip` for the contact sheet. Maker layouts are the `LAYOUTS` table in `layouts.py`, the DX and KEYKODE (Code 128) encoders `barcodes.py`; a stock's own marks, DX number and respool source (`prints_as`) are the `edge` object in `gear/film_stocks.json`, each entry naming its `source`. The `edge-print-from-photo` skill adds a stock from a photo of the film.
+**Film edge print** (`services/film_edge/`): the film strip's rebate, edge print and perforations, painted by `paint_strip` for the contact sheet and, one frame pitch per cell, the Light Table (`_FilmDelegate` in `sidebar/files.py`, the look from the active frame). Maker layouts are the `LAYOUTS` table in `layouts.py`, the DX and KEYKODE (Code 128) encoders `barcodes.py`; a stock's own marks, DX number and respool source (`prints_as`) are the `edge` object in `gear/film_stocks.json`, each entry naming its `source`. The `edge-print-from-photo` skill adds a stock from a photo of the film.
 
 ### Pipeline
 

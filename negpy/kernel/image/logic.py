@@ -690,6 +690,9 @@ def calculate_file_hash(file_path: str) -> str:
     return file_hashes(file_path)[0]
 
 
+THUMBNAIL_PAD = (14, 17, 23)
+
+
 def prepare_thumbnail(img: Any, size: int) -> Any:
     """
     Resizes and pads an image to a square of given size.
@@ -702,7 +705,7 @@ def prepare_thumbnail(img: Any, size: int) -> Any:
     img_copy.thumbnail((size, size), Image.Resampling.LANCZOS)
 
     # Create dark square background
-    square_img = Image.new("RGB", (size, size), (14, 17, 23))
+    square_img = Image.new("RGB", (size, size), THUMBNAIL_PAD)
     # Center the thumbnail
     offset_x = (size - img_copy.width) // 2
     offset_y = (size - img_copy.height) // 2

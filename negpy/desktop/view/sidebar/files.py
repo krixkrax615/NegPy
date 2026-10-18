@@ -1,5 +1,8 @@
 import os
-from typing import List, Optional
+from dataclasses import replace
+from typing import Any, Callable, List, Optional
+
+import numpy as np
 
 import qtawesome as qta
 from PyQt6.QtCore import (
@@ -18,7 +21,7 @@ from PyQt6.QtCore import (
     pyqtSignal,
     pyqtSlot,
 )
-from PyQt6.QtGui import QActionGroup, QColor, QKeySequence, QPainter, QPainterPath, QPen, QShortcut
+from PyQt6.QtGui import QActionGroup, QColor, QIcon, QImage, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QShortcut, QTransform
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -92,6 +95,15 @@ from negpy.desktop.view.widgets.collapsible import CollapsibleSection, make_sect
 from negpy.desktop.view.widgets.file_dialogs import last_open_folder
 from negpy.services.assets.library import folder_counts, folder_label
 from negpy.services.assets.thumbnails import asset_thumbnail_key
+from negpy.domain.models import WorkspaceConfig
+from negpy.kernel.image.logic import THUMBNAIL_PAD
+from negpy.features.geometry.models import GeometryConfig
+from negpy.services.export.contact_sheet import palette_for
+from negpy.services.export.contact_sheet_layout import frame_turns
+from negpy.services.export.contact_sheet_roll import SheetFrame, infer_format, sheet_look
+from negpy.services.film_edge.edge import EdgeStyle
+from negpy.services.film_edge.geometry import FilmGeometry, film_geometry
+from negpy.services.film_edge.paint import Palette, paint_strip
 
 
 _UNBOUNDED_HEIGHT = 16777215  # QWIDGETSIZE_MAX — Qt's "no maximum"
@@ -122,6 +134,7 @@ class _ThumbnailDelegate(QStyledItemDelegate):
     _COMPOSITE_RING = QColor(255, 255, 255, 90)
     _COMPOSITE_GLYPH = QColor(255, 255, 255, 235)
     _DIRTY_PX = 2
+    _IDLE_OPACITY = 0.5
     _STALE_DOT_RADIUS = 4
     _ACTIVITY_INTERVAL_MS = 40
     _ACTIVITY_STEP = 0.035
@@ -222,10 +235,13 @@ class _ThumbnailDelegate(QStyledItemDelegate):
         within the margin, or that whole area while it has none."""
         area = cell.adjusted(self._MARGIN, self._MARGIN, -self._MARGIN, -self._MARGIN)
         icon = index.data(Qt.ItemDataRole.DecorationRole)
-        base = icon.pixmap(QSize(4096, 4096)) if icon is not None and not icon.isNull() else None
+        base = self._thumbnail(icon, index) if icon is not None and not icon.isNull() else None
         if base is None or base.isNull():
             return area
         return self._fit_rect(area, base.size().scaled(area.size(), Qt.AspectRatioMode.KeepAspectRatio))
+
+    def _thumbnail(self, icon: QIcon, index: QModelIndex) -> QPixmap:
+        return icon.pixmap(QSize(4096, 4096))  # largest available pixmap (~120px)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         view = self.parent()
@@ -384,7 +400,7 @@ class _ThumbnailDelegate(QStyledItemDelegate):
                 )
             painter.restore()
             return
-        base = icon.pixmap(QSize(4096, 4096))  # largest available pixmap (~120px)
+        base = self._thumbnail(icon, index)
         if base.isNull():
             self._paint_placeholder(painter, option, file_info, failed, kind)
             return
@@ -410,7 +426,7 @@ class _ThumbnailDelegate(QStyledItemDelegate):
         clip = QPainterPath()
         clip.addRoundedRect(QRectF(img_rect), self._RADIUS, self._RADIUS)
         painter.setClipPath(clip)
-        base_opacity = 1.0 if (selected or hover) else 0.5
+        base_opacity = 1.0 if (selected or hover) else self._IDLE_OPACITY
         painter.setOpacity(0.25 if rejected else base_opacity)
         painter.drawPixmap(img_rect.topLeft(), scaled)
         painter.setOpacity(1.0)
@@ -792,6 +808,156 @@ class ThumbnailGridView(QListView):
         event.accept()
 
 
+# Barcode modules this coarse alias, so they print as their mean.
+_DRAFT_PX_PER_MM = 4.0
+# The Light Table is a lit white surface; the perforations show it through the film.
+LIGHT_TABLE_WHITE = THEME.canvas_bg_white
+
+
+def light_table_film(asset: dict, config: WorkspaceConfig, library: Any, half_frame: bool) -> tuple[FilmGeometry, EdgeStyle, Palette]:
+    """The roll as film: the active frame's format and edge print, in the contact sheet's palette."""
+    frames = [SheetFrame(asset, config)]
+    fmt, frame_size = infer_format(frames, half_frame)
+    look = sheet_look(frames, fmt, library=library)
+    white = QColor(LIGHT_TABLE_WHITE)
+    return film_geometry(fmt, frame_size), look.edge, replace(palette_for(look), no_film=(white.red(), white.green(), white.blue()))
+
+
+def picture_in_thumbnail(image: QImage) -> QRect:
+    """The picture inside a thumbnail that prepare_thumbnail padded to a square, centered on one axis."""
+    rgb = image.convertToFormat(QImage.Format.Format_RGB888)
+    width, height = rgb.width(), rgb.height()
+    rows = np.frombuffer(rgb.constBits().asstring(rgb.sizeInBytes()), np.uint8).reshape(height, rgb.bytesPerLine())
+    pixels = rows[:, : width * 3].reshape(height, width, 3).astype(np.int16)
+    live = np.abs(pixels - np.array(THUMBNAIL_PAD, np.int16)).max(axis=2) > 10
+
+    def pad(lines: np.ndarray) -> int:
+        found = np.flatnonzero(lines)
+        return int(min(found[0], len(lines) - 1 - found[-1])) if found.size else 0
+
+    pad_y, pad_x = pad(live.any(axis=1)), pad(live.any(axis=0))
+    if pad_y >= pad_x:
+        return QRect(0, pad_y, width, height - 2 * pad_y)
+    return QRect(pad_x, 0, width - 2 * pad_x, height)
+
+
+class _FilmDelegate(_ThumbnailDelegate):
+    """Light Table cells as film: the rebate at the frame's slot, the thumbnail in its window as it lies on the film."""
+
+    _CACHE_LIMIT = 512
+    _IDLE_OPACITY = 1.0
+
+    def __init__(
+        self, parent=None, state: Optional[AppState] = None, frame_geometry: Optional[Callable[[dict], GeometryConfig]] = None
+    ) -> None:
+        super().__init__(parent, state)
+        self._frame_geometry = frame_geometry
+        self._film: Optional[tuple[FilmGeometry, EdgeStyle, Palette]] = None
+        self._rebates: dict[tuple[int, int, int], QImage] = {}
+        self._pictures: dict[int, QPixmap] = {}
+
+    def set_film(self, geometry: FilmGeometry, style: EdgeStyle, palette: Palette) -> None:
+        self._film = (geometry, style, palette)
+        self._rebates.clear()
+        self._pictures.clear()
+
+    def _draw_outline(self, painter: QPainter, img_rect: QRect, file_info: dict, selected: bool, hover: bool) -> None:
+        super()._draw_outline(painter, img_rect, file_info, selected or hover, False)
+
+    def _thumbnail(self, icon: QIcon, index: QModelIndex) -> QPixmap:
+        base = super()._thumbnail(icon, index)
+        film = self._film
+        if film is None or base.isNull():
+            return base
+        picture = self._pictures.get(base.cacheKey())
+        if picture is None:
+            # A turned or re-rendered thumbnail is a new pixmap, so the cache only grows until cleared.
+            if len(self._pictures) > self._CACHE_LIMIT:
+                self._pictures.clear()
+            picture = base.copy(picture_in_thumbnail(base.toImage()))
+            if self._frame_geometry is not None and picture.height() > 0:
+                geo = self._frame_geometry(index.data(Qt.ItemDataRole.UserRole) or {})
+                turns = frame_turns(picture.width() / picture.height(), film[0], geo.rotation, geo.flip_horizontal, geo.flip_vertical)
+                if turns:
+                    picture = picture.transformed(QTransform().rotate(-90 * turns))
+            self._pictures[base.cacheKey()] = picture
+        return picture
+
+    def _rebate(self, film: tuple[FilmGeometry, EdgeStyle, Palette], slot: int, width: int, frames: int) -> QImage:
+        key = (slot, width, frames)
+        image = self._rebates.get(key)
+        if image is None:
+            if len(self._rebates) > self._CACHE_LIMIT:
+                self._rebates.clear()
+            geometry, style, palette = film
+            s = width / geometry.pitch
+            canvas = np.zeros((max(1, int(round(geometry.width * s))), width, 3), np.uint8)
+            paint_strip(canvas, 0.0, 0.0, geometry, style, frames, slot * geometry.pitch, geometry.pitch, s, palette, s < _DRAFT_PX_PER_MM)
+            image = QImage(canvas.data, width, canvas.shape[0], canvas.strides[0], QImage.Format.Format_RGB888).copy()
+            self._rebates[key] = image
+        return image
+
+    @staticmethod
+    def _layout(geometry: FilmGeometry, cell: QRect) -> tuple[int, QRect]:
+        """(strip top, frame window) of a cell, the strip centered in the cell's height."""
+        s = cell.width() / geometry.pitch
+        top = cell.top() + (cell.height() - int(round(geometry.width * s))) // 2
+        left = cell.left() + (geometry.pitch - geometry.frame_along) / 2 * s
+        along, across = geometry.frame_along * s, geometry.frame_across * s
+        return top, QRect(int(round(left)), int(round(top + geometry.image_top * s)), int(round(along)), int(round(across)))
+
+    def picture_rect(self, cell: QRect, index: QModelIndex) -> QRect:
+        if self._film is None:
+            return super().picture_rect(cell, index)
+        m = self._MARGIN
+        return super().picture_rect(self._layout(self._film[0], cell)[1].adjusted(-m, -m, m, m), index)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        film = self._film
+        if film is None:
+            super().paint(painter, option, index)
+            return
+        cell = option.rect
+        top, window = self._layout(film[0], cell)
+        painter.drawImage(cell.left(), top, self._rebate(film, index.row(), cell.width(), index.model().rowCount()))
+        framed = QStyleOptionViewItem(option)
+        m = self._MARGIN
+        framed.rect = window.adjusted(-m, -m, m, m)
+        super().paint(painter, framed, index)
+
+
+class _FilmGridView(ThumbnailGridView):
+    """Cells one frame pitch wide and one film width tall; the cells of a row join into one strip."""
+
+    SPACING = 0
+    STRIP_GAP = THEME.space_xl
+    PADDING = THEME.space_2xl
+    _aspect = 1.0
+
+    def __init__(self, parent=None, target_cell: int = THUMB_CELL_DEFAULT) -> None:
+        super().__init__(parent, target_cell)
+        self.setStyleSheet(f"QListView {{ background-color: {LIGHT_TABLE_WHITE}; padding: {self.PADDING}px; }}")
+
+    def set_film_aspect(self, aspect: float) -> None:
+        if aspect != self._aspect:
+            self._aspect = aspect
+            self._last_cell = -1
+            self._relayout()
+
+    def cell_for_width(self, vw: int) -> int:
+        # QListView wraps a row whose right edge reaches the viewport's last pixel.
+        return max(1, (vw - 1) // self.columns_for_width(vw))
+
+    def _apply_cell(self, cell: int) -> None:
+        if cell == self._last_cell:
+            return
+        self._last_cell = cell
+        size = QSize(cell, int(round(cell * self._aspect)) + self.STRIP_GAP)
+        self.setGridSize(size)
+        self.setIconSize(size)
+        self.verticalScrollBar().setSingleStep(max(1, size.height() // 4))
+
+
 class FileBrowser(QWidget):
     """
     Asset management panel for loading and selecting images.
@@ -1023,10 +1189,15 @@ class FileBrowser(QWidget):
         self.tally_label.setStyleSheet(f"color: {THEME.text_secondary}; font-size: {THEME.font_size_small}px;")
         self.tally_label.setVisible(False)
 
-        self.list_view, self._thumbnail_delegate = self._make_grid(self.thumb_size_slider.value())
+        self.list_view = ThumbnailGridView(target_cell=self.thumb_size_slider.value())
+        self._thumbnail_delegate = _ThumbnailDelegate(self.list_view, state=self.session.state)
+        self._make_grid(self.list_view, self._thumbnail_delegate)
         # The Light Table; MainWindow lays it out in the canvas's place.
-        self.light_table_view, self._light_table_delegate = self._make_grid(THUMB_CELL_MAX)
+        self.light_table_view = _FilmGridView(target_cell=THUMB_CELL_MAX)
+        self._light_table_delegate = _FilmDelegate(self.light_table_view, state=self.session.state, frame_geometry=self._frame_geometry)
+        self._make_grid(self.light_table_view, self._light_table_delegate)
         self.light_table_view.setSelectionModel(self.list_view.selectionModel())
+        self._light_table_key: Optional[tuple] = None
         self._apply_sort_order(str(saved_sort), save=False)
         self._apply_sort_direction(bool(saved_desc), save=False)
 
@@ -1242,22 +1413,50 @@ class FileBrowser(QWidget):
             del_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
             del_shortcut.activated.connect(self._on_delete_key)
 
+    def _frame_geometry(self, asset: dict) -> GeometryConfig:
+        state = self.session.state
+        if asset.get("hash") and asset.get("hash") == state.current_file_hash:
+            return state.config.geometry
+        saved = self.session.repo.load_file_settings(asset["hash"]) if asset.get("hash") else None
+        return saved.geometry if saved is not None else GeometryConfig()
+
+    def _sync_light_table_film(self) -> None:
+        """The Light Table's film, from the active frame; the gear library is read only when an input changes."""
+        state = self.session.state
+        files = state.uploaded_files
+        asset = files[state.selected_file_idx] if 0 <= state.selected_file_idx < len(files) else {}
+        config = state.config
+        meta = config.metadata
+        half_frame = bool(self.controller.half_frame_mode_for_roll(state.active_roll_id)) if state.active_roll_id else False
+        key = (
+            (meta.film_stock_id, meta.film, meta.film_manufacturer, meta.film_color_type, meta.format, meta.format_other),
+            (config.process.process_mode, config.process.positive_source, config.exposure.paper_black),
+            (half_frame, asset.get("half")),
+        )
+        if key == self._light_table_key:
+            return
+        self._light_table_key = key
+        try:
+            library = self.controller.load_gear_library()
+        except Exception:
+            library = None
+        geometry, style, palette = light_table_film(asset, config, library, half_frame)
+        self._light_table_delegate.set_film(geometry, style, palette)
+        self.light_table_view.set_film_aspect(geometry.width / geometry.pitch)
+
     def _open_from_light_table(self, index) -> None:
         if index.isValid():
             self._activate_file(index)
             self.light_table_opened.emit()
 
-    def _make_grid(self, target_cell: int) -> tuple["ThumbnailGridView", "_ThumbnailDelegate"]:
-        view = ThumbnailGridView(target_cell=target_cell)
+    def _make_grid(self, view: ThumbnailGridView, delegate: _ThumbnailDelegate) -> None:
         view.setModel(self.session.asset_model)
-        delegate = _ThumbnailDelegate(view, state=self.session.state)
         view.setItemDelegate(delegate)
         view.setViewMode(QListView.ViewMode.IconMode)
         view.setResizeMode(QListView.ResizeMode.Adjust)
         view.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
         view.setAlternatingRowColors(False)
         view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        return view, delegate
 
     def search_library(self) -> None:
         """Run the box's query against the library folders instead of the loaded roll."""
@@ -1343,6 +1542,7 @@ class FileBrowser(QWidget):
 
         # Repaint for dirty underline
         self.list_view.viewport().update()
+        self._sync_light_table_film()
         self.light_table_view.viewport().update()
 
         if current_actual == target_actual:
