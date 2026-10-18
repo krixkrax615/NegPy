@@ -10,6 +10,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 
 from negpy.infrastructure.scanners.base import (
@@ -72,6 +73,28 @@ def _bin_samples(arr: np.ndarray) -> np.ndarray:
             out += a[dy:h:_SAMPLE_BIN, dx:w:_SAMPLE_BIN]
     n = _SAMPLE_BIN * _SAMPLE_BIN
     return ((out + n // 2) // n).astype(a.dtype)
+
+
+#: A metered scan whose film peak lands below this fraction of the peak metering predicted is treated as a glitch.
+_BLACK_SCAN_RATIO = 0.15
+
+
+def scan_looks_black(rgb: np.ndarray, expected_peak: float) -> bool:
+    """True when the film in ``rgb`` is far darker than metering predicted (a blank or black scan).
+
+    Open light and its edge are dropped, as metering does, then the brightest channel's 99.9th percentile of the
+    rest is compared with ``expected_peak`` (counts of 65535). Too little film to judge counts as fine.
+    """
+    a = np.asarray(rgb)
+    h, w = a.shape[:2]
+    inner = a[h // 20 : h - h // 20 : 8, w // 20 : w - w // 20 : 8].astype(np.float32)
+    open_light = (inner >= 0.9 * 65535.0).any(axis=2).astype(np.uint8)
+    # The edge of open light is soft: grow the mask by about 1.5 % of the frame so it is not read as film.
+    grown = cv2.dilate(open_light, np.ones((7, 7), np.uint8)).astype(bool)
+    film = inner[~grown]
+    if film.shape[0] < 1000 or expected_peak <= 0:
+        return False
+    return float(np.percentile(film, 99.9, axis=0).max()) < _BLACK_SCAN_RATIO * expected_peak
 
 
 def _caps_for(model: Any) -> ScannerCapabilities:
@@ -492,21 +515,35 @@ class PlustekBackend:
                 # "prime_skipped" when gl128_prime is off (default on both GL128 models).
 
             scan_area = None if geometry is not None else window
-            rgb_image = scanner.scan(
-                resolution=scan_dpi,
-                mode="color",
-                area=scan_area,
-                geometry=geometry,
-                progress=scan_progress,
-                cancel=cancel,
-                on_status=on_status,
-                multi_exposure=multi_exposure,
-                infrared=capture_ir,
-                align_passes=True,
-                n_passes=n_passes,
-                single_pass_exposure=film_exposure,
-                raw=bool(params.raw_capture),
-            )
+            expected_peak = None
+            meter_peak = getattr(scanner, "last_meter_peak", None)
+            if film_exposure is not None and meter_peak:
+                expected_peak = min(65535.0, meter_peak * film_exposure / float(scanner.model.exposure_short))
+
+            for attempt in (1, 2):
+                rgb_image = scanner.scan(
+                    resolution=scan_dpi,
+                    mode="color",
+                    area=scan_area,
+                    geometry=geometry,
+                    progress=scan_progress,
+                    cancel=cancel,
+                    on_status=on_status,
+                    multi_exposure=multi_exposure,
+                    infrared=capture_ir,
+                    align_passes=True,
+                    n_passes=n_passes,
+                    single_pass_exposure=film_exposure,
+                    raw=bool(params.raw_capture),
+                )
+                if expected_peak is None or not scan_looks_black(np.asarray(rgb_image.rgb), expected_peak):
+                    break
+                logger.warning("Scan came out far darker than metering predicted (attempt %d of 2)", attempt)
+                if attempt == 2:
+                    raise TransientScanError(
+                        "The scan came out black twice although metering saw the film. "
+                        "Power-cycle the scanner and scan again."
+                    )
             ir_plane = np.asarray(rgb_image.ir) if capture_ir and rgb_image.ir is not None else None
         except ScanCancelled as exc:
             raise RuntimeError("Scan cancelled") from exc
