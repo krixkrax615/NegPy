@@ -1044,13 +1044,10 @@ def next_scene_name(repo: Any, roll_id: Optional[str]) -> str:
     return f"Scene {n}"
 
 
-def resolve_roll_baseline(
-    repo: Any, roll_id: str, file_hash: str, config: "WorkspaceConfig", shift: float = 0.0
-) -> "WorkspaceConfig":
+def resolve_roll_baseline(repo: Any, roll_id: str, file_hash: str, config: "WorkspaceConfig") -> "WorkspaceConfig":
     """A frame riding Use Luma/Color Average without a baseline of its own takes its
     scene's, else the roll's, neutral axis included: a frame loaded after the analysis ran
-    still follows it. A frame that already carries one, or has Lock Bounds on, keeps it. ``shift`` is the frame's
-    log10 scan exposure over the default one (the roll keeps its baseline at the default exposure)."""
+    still follows it. A frame that already carries one, or has Lock Bounds on, keeps it."""
     process = config.process
     if process.lock_bounds or process.is_locked_initialized or not (process.use_luma_average or process.use_color_average):
         return config
@@ -1063,8 +1060,8 @@ def resolve_roll_baseline(
         config,
         process=replace(
             process,
-            locked_floors=tuple(float(v) + shift for v in saved["floors"]),
-            locked_ceils=tuple(float(v) + shift for v in saved["ceils"]),
+            locked_floors=saved["floors"],
+            locked_ceils=saved["ceils"],
             locked_neutral_axis=saved["axis"],
             baseline_source=source,
         ),

@@ -156,19 +156,13 @@ def read_scan_size(asset: dict) -> Optional[tuple[int, int]]:
 
 
 def read_scan_ev(path: str) -> Optional[float]:
-    """Camera raw or a NegPy Plustek scan: the data is linear, so an exposure difference is a pure scale on it."""
+    """Camera raw only: its decode is linear, so an exposure difference is a pure scale on the data."""
     from negpy.infrastructure.loaders.constants import (
         SUPPORTED_JPEG_EXTENSIONS,
         SUPPORTED_JXL_EXTENSIONS,
         SUPPORTED_RAW_EXTENSIONS,
         SUPPORTED_TIFF_EXTENSIONS,
     )
-
-    from negpy.services.scanning.capture_info import PLUSTEK_DEFAULT_EXPOSURE, film_exposure
-
-    scan_exposure = film_exposure(path)
-    if scan_exposure is not None:  # a NegPy Plustek scan: linear, exposure from its capture line
-        return math.log2(scan_exposure / PLUSTEK_DEFAULT_EXPOSURE)
 
     camera_raw = SUPPORTED_RAW_EXTENSIONS - SUPPORTED_TIFF_EXTENSIONS - SUPPORTED_JPEG_EXTENSIONS - SUPPORTED_JXL_EXTENSIONS
     if os.path.splitext(path)[1].lower() not in camera_raw:

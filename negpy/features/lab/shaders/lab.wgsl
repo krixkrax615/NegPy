@@ -21,12 +21,14 @@ struct LabUniforms {
 // USM: (blurred L*, original L*) from lab_sharpen_h/v.wgsl.
 // RL:  (deconvolved Y, observed Y) from the rl_*.wgsl chain. 1x1 dummy when sharpen=0.
 @group(0) @binding(3) var sharpen_tex: texture_2d<f32>;
-// (low-pass a*, low-pass b*) from chroma_lowpass_h/v.wgsl. 1x1 dummy when Chroma Denoise is off.
+// (low-pass a*, low-pass b*, low-pass L*) from chroma_lowpass_h/v.wgsl. 1x1 dummy when Chroma Denoise is off.
 @group(0) @binding(4) var chroma_tex: texture_2d<f32>;
 // (guided a*, guided b*) from the chroma_guide_*/chroma_post_* chain. 1x1 dummy when Chroma Denoise is off.
 @group(0) @binding(5) var guided_tex: texture_2d<f32>;
 // (denoised L*, 0, 0, 0) from the luma_guide_* chain. 1x1 dummy when Luma Denoise is off.
 @group(0) @binding(6) var luma_tex: texture_2d<f32>;
+// (bilateral a*, bilateral b*) of the colour-edge band from chroma_edge_bilateral.wgsl. 1x1 dummy when Chroma Denoise is off.
+@group(0) @binding(7) var edge_tex: texture_2d<f32>;
 
 // Sharpen constants — mirrored from features/lab/logic.py.
 const SHARPEN_GATE_LO = 0.25;
@@ -129,6 +131,8 @@ const BLOOM_GAUSS_SUM = 27.668145;
 // Chroma Denoise edge test — mirrors CHROMA_EDGE_LO/HI in lab/logic.py.
 const CHROMA_EDGE_LO = 1.0;
 const CHROMA_EDGE_HI = 2.5;
+const CHROMA_EDGE_LUMA_LO = 1.0;
+const CHROMA_EDGE_LUMA_HI = 3.0;
 const CHROMA_EDGE_SIGMA = 6.0;
 
 // Working-space TRC (Adobe RGB: pure 563/256 gamma). Lab is the encoded->linear
@@ -325,22 +329,24 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var color = load_lin(coords);
 
     // 1. Chroma Denoise -- mirrors apply_chroma_denoise in logic.py. guided_tex holds the luma-guided a*/b*;
-    // chroma_tex the heavy low-pass a*/b* that finds colour edges (central differences, clamped like the CPU's
-    // edge-replicated pad). At an edge the original chroma is kept (low + keep * (ab - low)), elsewhere the guided one.
+    // chroma_tex the heavy low-pass a*/b*/L* that finds colour edges (central differences, clamped like the CPU's
+    // edge-replicated pad). At a colour edge with no luma step the bilateral-cleaned chroma (edge_tex) is used,
+    // elsewhere the guided one; a luma step fades the fallback out (the guided filter already keeps that edge).
     if (params.chroma_radius_px > 0.0) {
         let lo = vec2<i32>(0);
         let hi = vec2<i32>(dims) - 1;
-        let low = textureLoad(chroma_tex, coords, 0).xy;
-        let gx = (textureLoad(chroma_tex, clamp(coords + vec2<i32>(1, 0), lo, hi), 0).xy
-            - textureLoad(chroma_tex, clamp(coords - vec2<i32>(1, 0), lo, hi), 0).xy) * 0.5;
-        let gy = (textureLoad(chroma_tex, clamp(coords + vec2<i32>(0, 1), lo, hi), 0).xy
-            - textureLoad(chroma_tex, clamp(coords - vec2<i32>(0, 1), lo, hi), 0).xy) * 0.5;
-        let g = sqrt(dot(gx, gx) + dot(gy, gy)) * CHROMA_EDGE_SIGMA * params.scale_factor;
-        let keep = smoothstep(CHROMA_EDGE_LO, CHROMA_EDGE_HI, g);
+        let gx = (textureLoad(chroma_tex, clamp(coords + vec2<i32>(1, 0), lo, hi), 0).xyz
+            - textureLoad(chroma_tex, clamp(coords - vec2<i32>(1, 0), lo, hi), 0).xyz) * 0.5;
+        let gy = (textureLoad(chroma_tex, clamp(coords + vec2<i32>(0, 1), lo, hi), 0).xyz
+            - textureLoad(chroma_tex, clamp(coords - vec2<i32>(0, 1), lo, hi), 0).xyz) * 0.5;
+        let edge_sigma = CHROMA_EDGE_SIGMA * params.scale_factor;
+        let g = sqrt(dot(gx.xy, gx.xy) + dot(gy.xy, gy.xy)) * edge_sigma;
+        let g_luma = sqrt(gx.z * gx.z + gy.z * gy.z) * edge_sigma;
+        let keep = smoothstep(CHROMA_EDGE_LO, CHROMA_EDGE_HI, g) * (1.0 - smoothstep(CHROMA_EDGE_LUMA_LO, CHROMA_EDGE_LUMA_HI, g_luma));
         let current_lab = rgb_to_lab(color);
-        let original_edge = low + keep * (current_lab.yz - low);
+        let edge_ab = textureLoad(edge_tex, coords, 0).xy;
         let guided = textureLoad(guided_tex, coords, 0).xy;
-        let ab = guided * (1.0 - keep) + original_edge * keep;
+        let ab = guided * (1.0 - keep) + edge_ab * keep;
         color = lab_to_rgb(vec3<f32>(current_lab.x, ab.x, ab.y));
     }
 

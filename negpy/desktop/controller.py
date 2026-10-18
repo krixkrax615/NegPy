@@ -110,7 +110,7 @@ from negpy.domain.models import (
 from negpy.services.assets.composites import forget_composite, restore_maps, source_files
 from negpy.services.assets.triplets import saved_triplets
 from negpy.services.assets import rolls
-from negpy.services.scanning.capture_info import base_for_exposure, exposure_shift, film_exposure
+from negpy.services.scanning.capture_info import base_for_exposure, film_exposure
 from negpy.services.assets.sensor import SensorProfiles
 from negpy.services.export.contact_sheet_layout import ContactSheetSettings
 from negpy.services.export.contact_sheet_roll import (
@@ -5426,14 +5426,13 @@ class AppController(QObject):
                 locked_skipped += 1
                 continue
             rides = f_info["hash"] not in outliers
-            shift = exposure_shift(f_info.get("path"))
             new_process = replace(
                 p.process,
                 use_luma_average=rides,
                 use_color_average=rides,
                 use_cast_average=rides and axis is not None,
-                locked_floors=tuple(v + shift for v in floors),
-                locked_ceils=tuple(v + shift for v in ceils),
+                locked_floors=floors,
+                locked_ceils=ceils,
                 locked_neutral_axis=axis,
                 roll_name=roll_name,
                 baseline_source=source,
@@ -5450,14 +5449,13 @@ class AppController(QObject):
 
         if any(f["hash"] == current for f in targets) and not self.state.config.process.lock_bounds:
             rides = current not in outliers
-            shift = exposure_shift(self.state.current_file_path)
             new_process = replace(
                 self.state.config.process,
                 use_luma_average=rides,
                 use_color_average=rides,
                 use_cast_average=rides and axis is not None,
-                locked_floors=tuple(v + shift for v in floors),
-                locked_ceils=tuple(v + shift for v in ceils),
+                locked_floors=floors,
+                locked_ceils=ceils,
                 locked_neutral_axis=axis,
                 roll_name=roll_name,
                 baseline_source=source,
@@ -5534,8 +5532,7 @@ class AppController(QObject):
         if bounds is None:
             self.set_status("Render this frame before taking its bounds", 3000)
             return
-        shift = exposure_shift(self.state.current_file_path)  # the roll keeps its baseline at the default exposure
-        floors, ceils = (tuple(v - shift for v in bounds[0]), tuple(v - shift for v in bounds[1]))
+        floors, ceils = bounds
         rolls.set_roll_normalization(self.session.repo, roll_id, floors, ceils)
         self.apply_normalization_roll(roll_id)
 
@@ -6036,13 +6033,7 @@ class AppController(QObject):
         config = self._with_card_values(config, card_key, values)
         if card_key == "baseline":
             file_hash = rolls.unforked_hash(self.state.current_file_hash)
-            config = rolls.resolve_roll_baseline(
-                self.session.repo,
-                self.state.active_roll_id,
-                file_hash,
-                config,
-                shift=exposure_shift(self.state.current_file_path),
-            )
+            config = rolls.resolve_roll_baseline(self.session.repo, self.state.active_roll_id, file_hash, config)
         return config
 
     @staticmethod

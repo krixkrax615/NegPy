@@ -40,35 +40,3 @@ def test_base_is_untouched_when_an_exposure_is_unknown_or_equal():
     assert base_for_exposure(base, 56000, 56000) == base
 
 
-def test_exposure_shift_is_log10_over_the_default(tmp_path):
-    from negpy.services.scanning.capture_info import exposure_shift
-
-    p = _tif(tmp_path, "d.tif", "NegPy Plustek scan: 3600 dpi, 16-bit, auto-exposure 56000")
-    assert abs(exposure_shift(p) - math.log10(56000 / PLUSTEK_DEFAULT_EXPOSURE)) < 1e-9
-    assert exposure_shift(_tif(tmp_path, "e.tif", "")) == 0.0
-    assert exposure_shift(None) == 0.0
-
-
-def test_contact_sheet_reads_a_plustek_scans_exposure_in_stops(tmp_path):
-    from negpy.services.export.contact_sheet_roll import read_scan_ev
-
-    p = _tif(tmp_path, "f.tif", "NegPy Plustek scan: 3600 dpi, 16-bit, auto-exposure 56000")
-    assert abs(read_scan_ev(p) - math.log2(56000 / PLUSTEK_DEFAULT_EXPOSURE)) < 1e-9
-
-
-def test_a_late_loaded_frame_takes_the_roll_baseline_at_its_own_exposure():
-    from dataclasses import replace
-
-    from negpy.domain.models import WorkspaceConfig
-    from negpy.services.assets import rolls
-    from tests.test_film_base import _repo_with_roll
-
-    repo, roll_id = _repo_with_roll()
-    rolls.set_roll_normalization(repo, roll_id, (-3.0, -3.1, -3.2), (-0.1, -0.2, -0.3))
-    cfg = WorkspaceConfig()
-    cfg = replace(cfg, process=replace(cfg.process, use_luma_average=True, use_color_average=True))
-
-    out = rolls.resolve_roll_baseline(repo, roll_id, "hash-a", cfg, shift=0.3)
-
-    assert out.process.locked_floors == tuple(v + 0.3 for v in (-3.0, -3.1, -3.2))
-    assert out.process.locked_ceils == tuple(v + 0.3 for v in (-0.1, -0.2, -0.3))

@@ -321,6 +321,15 @@ def _saturation_block(img: ImageBuffer, saturation: float, skin_protection: floa
 CHROMA_EDGE_LO = 1.0
 CHROMA_EDGE_HI = 2.5
 CHROMA_EDGE_SIGMA = 6.0
+# Where a colour edge keeps its own chroma, that chroma is only cleaned by a bilateral filter (range sigma in a*/b*
+# units, spatial sigma in render px at scale 1): raw chroma carries the grain too, which showed as a noisy band
+# along every edge, while a plain blur would haloed the edge itself.
+CHROMA_EDGE_RANGE_SIGMA = 10.0
+CHROMA_EDGE_SPATIAL_SIGMA = 2.0
+# A chroma edge that also has a luma step is already kept by the guided filter, so it needs no raw-chroma fallback:
+# the fallback fades out as the low band's L* gradient times sigma (L* units) goes from LO to HI.
+CHROMA_EDGE_LUMA_LO = 1.0
+CHROMA_EDGE_LUMA_HI = 3.0
 # Below this blur strength (slider x scale) both engines skip the stage.
 CHROMA_DENOISE_MIN_SIGMA = 0.25
 CHROMA_GUIDE_RADIUS_BASE = 4.0
@@ -377,6 +386,25 @@ def guided_filter_ab(guide: np.ndarray, ab: np.ndarray, radius: int, eps: float)
     return _box_mean(slope, radius) * guide[:, :, None] + _box_mean(offset, radius)
 
 
+def chroma_luma_step(low_l: np.ndarray, sigma: float) -> np.ndarray:
+    """0 to 1: how strongly the low-passed L* has a step (gradient times sigma, smoothstepped LO to HI)."""
+    gx = cv2.filter2D(low_l, -1, _CENTRAL_DIFF, borderType=cv2.BORDER_REPLICATE)
+    gy = cv2.filter2D(low_l, -1, _CENTRAL_DIFF.T, borderType=cv2.BORDER_REPLICATE)
+    g = np.sqrt(gx * gx + gy * gy) * np.float32(sigma)
+    t = np.clip((g - np.float32(CHROMA_EDGE_LUMA_LO)) / np.float32(CHROMA_EDGE_LUMA_HI - CHROMA_EDGE_LUMA_LO), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _edge_band_chroma(ab: np.ndarray, scale_factor: float) -> np.ndarray:
+    """a*/b* cleaned for the colour-edge band: a bilateral filter, so a real chroma step stays a step."""
+    spatial = CHROMA_EDGE_SPATIAL_SIGMA * scale_factor
+    if spatial < CHROMA_DENOISE_MIN_SIGMA:
+        return ab
+    padded = np.dstack([ab, np.zeros(ab.shape[:2], np.float32)])
+    diameter = 2 * int(math.ceil(2.0 * spatial)) + 1
+    return cv2.bilateralFilter(padded, diameter, CHROMA_EDGE_RANGE_SIGMA, spatial)[:, :, :2]
+
+
 def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 1.0) -> ImageBuffer:
     """
     Luma-guided chroma denoise on CIELAB a*/b* (see the constants above). L* is untouched, so grain stays as
@@ -396,9 +424,11 @@ def apply_chroma_denoise(img: ImageBuffer, radius: float, scale_factor: float = 
         out = cv2.sepFilter2D(np.ascontiguousarray(out), -1, k, k)
     k = gaussian_kernel_1d(edge_sigma)
     low = cv2.sepFilter2D(ab, -1, k, k)
-    keep = chroma_edge_keep(low, edge_sigma)[:, :, None]
-    original_edge = low + (ab - low) * keep
-    lab[:, :, 1:3] = out * (1.0 - keep) + original_edge * keep
+    keep = chroma_edge_keep(low, edge_sigma)
+    keep *= 1.0 - chroma_luma_step(cv2.sepFilter2D(guide, -1, k, k), edge_sigma)
+    keep = keep[:, :, None]
+    edge_chroma = _edge_band_chroma(ab, scale_factor)
+    lab[:, :, 1:3] = out * (1.0 - keep) + edge_chroma * keep
 
     return ensure_image(np.clip(lab_to_rgb_working(lab), 0.0, 1.0))
 

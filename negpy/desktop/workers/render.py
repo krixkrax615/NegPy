@@ -2024,7 +2024,6 @@ class NormalizationWorker(QObject):
             unmix_log_image,
         )
         from negpy.features.process.models import ProcessMode
-        from negpy.services.scanning.capture_info import exposure_shift
         from negpy.features.geometry.logic import meter_detection_key, resolve_meter_rect
         from negpy.features.geometry.processor import GeometryProcessor
 
@@ -2109,15 +2108,7 @@ class NormalizationWorker(QObject):
                         completed += 1
                         count = completed
                     self.progress.emit(count, total, f_info["name"], has_crop)
-                    # Auto-exposure gives each scan its own sensor exposure: bring the bounds to the default one
-                    # so frames pool on one scale; _push_bounds adds each frame's own shift back.
-                    shift = exposure_shift(f_info.get("path"))
-                    return (
-                        tuple(float(v) - shift for v in bounds.floors),
-                        tuple(float(v) - shift for v in bounds.ceils),
-                        f_info["hash"],
-                        axis,
-                    )
+                    return bounds.floors, bounds.ceils, f_info["hash"], axis
                 except Exception as e:
                     logger.error(f"Failed to analyze {f_info['name']}: {e}")
                     async with lock:

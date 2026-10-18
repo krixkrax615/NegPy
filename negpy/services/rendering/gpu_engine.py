@@ -61,6 +61,8 @@ from negpy.features.geometry.logic import (
 from negpy.features.geometry.models import GeometryConfig, crops_frame
 from negpy.features.lab.logic import (
     CHROMA_DENOISE_MIN_SIGMA,
+    CHROMA_EDGE_RANGE_SIGMA,
+    CHROMA_EDGE_SPATIAL_SIGMA,
     chroma_denoise_sigma,
     chroma_guide_params,
     gaussian_kernel_1d,
@@ -228,6 +230,15 @@ def _keystone_inverse_bytes(converge_v: float, converge_h: float) -> bytes:
     return struct.pack("ffff", m[0, 0], m[0, 1], m[0, 2], m[1, 0]) + struct.pack("ffff", m[1, 1], m[1, 2], m[2, 0], m[2, 1])
 
 
+def _chroma_edge_bilateral_params(scale_factor: float) -> tuple[int, float]:
+    """(window radius px, spatial sigma px) of the colour-edge band's bilateral filter, as _edge_band_chroma in
+    features/lab/logic.py builds it (cv2 diameter 2 * ceil(2 * sigma) + 1); radius 0 when the stage is skipped."""
+    spatial = CHROMA_EDGE_SPATIAL_SIGMA * scale_factor
+    if spatial < CHROMA_DENOISE_MIN_SIGMA:
+        return 0, float(spatial)
+    return int(math.ceil(2.0 * spatial)), float(spatial)
+
+
 def _analysis_cache_key(settings: WorkspaceConfig, analysis_source_hash: str, film_base: Optional[tuple] = None) -> tuple:
     """Identity of the auto-exposure analysis: only the fields the meter reads, including every geometry field that moves
     which pixels land in the metered region. White/black point offsets and trims apply downstream as uniforms and must not
@@ -329,6 +340,9 @@ class GPUEngine:
             "lab_sharpen_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "lab_sharpen_v.wgsl")),
             "chroma_lowpass_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_lowpass_h.wgsl")),
             "chroma_lowpass_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_lowpass_v.wgsl")),
+            "chroma_edge_bilateral": get_resource_path(
+                os.path.join("negpy", "features", "lab", "shaders", "chroma_edge_bilateral.wgsl")
+            ),
             "chroma_guide_lab": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_lab.wgsl")),
             "chroma_guide_box_h": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_box_h.wgsl")),
             "chroma_guide_coef_v": get_resource_path(os.path.join("negpy", "features", "lab", "shaders", "chroma_guide_coef_v.wgsl")),
@@ -552,7 +566,7 @@ class GPUEngine:
             self._local_ev_key = None
         if labels & {"rl_a", "rl_b", "sharpen_h", "sharpen_v"}:
             self._sharpen_state_key = None
-        if labels & {"chroma_h", "chroma_v", "chroma_g0", "chroma_gx", "chroma_gy", "chroma_gz"}:
+        if labels & {"chroma_h", "chroma_v", "chroma_g0", "chroma_gx", "chroma_gy", "chroma_gz", "chroma_eb"}:
             self._chroma_state_key = None
         if labels & {"luma_g0", "luma_gx", "luma_gy", "luma_rgb"}:
             self._luma_state_key = None
@@ -631,8 +645,9 @@ class GPUEngine:
         self._buffers["sharpen_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # Chroma Denoise low-pass taps, the same helper's.
         self._buffers["chroma_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
-        # Guided Chroma Denoise: [box radius, eps, post-Gaussian half-width] and the post-Gaussian taps.
-        self._buffers["chroma_gp"] = GPUBuffer(16, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
+        # Guided Chroma Denoise: [box radius, eps, post-Gaussian half-width, 0, bilateral radius, bilateral spatial sigma,
+        # bilateral range sigma, 0] and the post-Gaussian taps.
+        self._buffers["chroma_gp"] = GPUBuffer(32, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         self._buffers["chroma_post_k"] = GPUBuffer(4096, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
         # Luma Denoise: [box radius, eps].
         self._buffers["luma_gp"] = GPUBuffer(16, wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
@@ -1466,7 +1481,9 @@ class GPUEngine:
                 tex_gx = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_gx")
                 tex_gy = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_gy")
                 tex_gz = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_gz")
-                chroma_key = (chroma_sigma, guide_radius, guide_eps, post_sigma, w_rot, h_rot)
+                tex_eb = self._get_intermediate_texture(w_rot, h_rot, usage, "chroma_eb")
+                bil_radius, bil_spatial = _chroma_edge_bilateral_params(scale_factor)
+                chroma_key = (chroma_sigma, guide_radius, guide_eps, post_sigma, bil_radius, w_rot, h_rot)
                 if chroma_key != self._chroma_state_key:
                     ck = self._buffers["chroma_k"]
                     gp = self._buffers["chroma_gp"]
@@ -1479,6 +1496,8 @@ class GPUEngine:
                     )
                     # Luma-guided a*/b*: Lab once, box means, per-pixel linear fit, box means of the fit, apply.
                     self._dispatch_pass(enc, "chroma_guide_lab", [(0, prev_tex.view), (1, tex_g0.view)], w_rot, h_rot)
+                    # Colour-edge band chroma: a bilateral filter of the raw a*/b* (radius 0 passes it through).
+                    self._dispatch_pass(enc, "chroma_edge_bilateral", [(0, tex_g0.view), (1, tex_eb.view), (3, gp)], w_rot, h_rot)
                     self._dispatch_pass(
                         enc, "chroma_guide_box_h", [(0, tex_g0.view), (1, tex_gx.view), (2, tex_gy.view), (3, gp)], w_rot, h_rot
                     )
@@ -1504,6 +1523,7 @@ class GPUEngine:
             else:
                 tex_chroma_v = self._get_intermediate_texture(1, 1, usage, "chroma_v")
                 tex_guided = self._get_intermediate_texture(1, 1, usage, "chroma_gz")
+                tex_eb = self._get_intermediate_texture(1, 1, usage, "chroma_eb")
             self._dispatch_pass(
                 enc,
                 "lab",
@@ -1515,6 +1535,7 @@ class GPUEngine:
                     (4, tex_chroma_v.view),
                     (5, tex_guided.view),
                     (6, tex_ly.view),
+                    (7, tex_eb.view),
                 ],
                 w_rot,
                 h_rot,
@@ -2364,11 +2385,17 @@ class GPUEngine:
                 self._buffers["chroma_k"].upload(chroma_kernel)
                 self._chroma_kernel_key = chroma_sigma
             guide_radius, guide_eps, post_sigma = chroma_guide_params(lab.chroma_denoise, scale_factor)
-            guide_key = (guide_radius, guide_eps, post_sigma)
+            bil_radius, bil_spatial = _chroma_edge_bilateral_params(scale_factor)
+            guide_key = (guide_radius, guide_eps, post_sigma, bil_radius, bil_spatial)
             if self._chroma_guide_key != guide_key:
                 post_kernel = gaussian_kernel_1d(post_sigma) if post_sigma >= CHROMA_DENOISE_MIN_SIGMA else np.ones(1, dtype=np.float32)
                 post_radius = len(post_kernel) // 2
-                self._buffers["chroma_gp"].upload(np.array([guide_radius, guide_eps, post_radius, 0.0], dtype=np.float32))
+                self._buffers["chroma_gp"].upload(
+                    np.array(
+                        [guide_radius, guide_eps, post_radius, 0.0, bil_radius, bil_spatial, CHROMA_EDGE_RANGE_SIGMA, 0.0],
+                        dtype=np.float32,
+                    )
+                )
                 self._buffers["chroma_post_k"].upload(np.asarray(post_kernel, dtype=np.float32))
                 self._chroma_guide_key = guide_key
         luma_strength = 0.0
@@ -3128,6 +3155,7 @@ class GPUEngine:
             guide_radius, _, post_sigma = chroma_guide_params(settings.lab.chroma_denoise, scale_factor)
             post_half = len(gaussian_kernel_1d(post_sigma)) // 2 if post_sigma >= CHROMA_DENOISE_MIN_SIGMA else 0
             halo = max(halo, 2 * guide_radius + post_half + 2)
+            halo = max(halo, _chroma_edge_bilateral_params(scale_factor)[0] + 2)
         # Luma Denoise chains two box means, as the guided Chroma Denoise does.
         if luma_denoise_active(settings.lab.luma_denoise):
             luma_radius, _ = luma_guide_params(settings.lab.luma_denoise, scale_factor)

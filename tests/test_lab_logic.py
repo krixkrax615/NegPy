@@ -386,6 +386,19 @@ class TestLabLogic(unittest.TestCase):
 
         self.assertLess(float(np.abs(res_lab[20, 24:36, 1] - lab[20, 24:36, 1]).max()), 1.5)
 
+    def test_chroma_denoise_cleans_the_noise_beside_a_luma_edge(self) -> None:
+        """Chroma noise right next to a brightness edge used to survive in a band along it."""
+        rng = np.random.default_rng(1)
+        lab = rgb_to_lab_working(np.full((120, 120, 3), 0.5, dtype=np.float32))
+        lab[:, 60:, 0] += 25.0  # a real brightness step ...
+        lab[:, 60:, 1] += 20.0  # ... carrying a colour step
+        lab[:, :, 1:3] += rng.normal(0, 5, (120, 120, 2)).astype(np.float32)
+        res_lab = rgb_to_lab_working(apply_chroma_denoise(lab_to_rgb_working(lab), radius=2.0))
+
+        band = res_lab[10:110, 52:68, 1]
+        residual = band - band.mean(axis=0, keepdims=True)  # the step is the same on every row
+        self.assertLess(float(residual.std()), 1.5)
+
     def test_chroma_denoise_keeps_lightness_grain(self) -> None:
         rng = np.random.default_rng(3)
         lab = rgb_to_lab_working(np.full((64, 64, 3), 0.4, dtype=np.float32))

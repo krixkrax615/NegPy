@@ -526,17 +526,34 @@ class TestLabParity:
                 )
                 _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
 
-    def _denoise_renders(self, chroma: float, luma: float, scale: float, sharpen: float = 0.0, noise: float = 0.03) -> tuple:
+    def _denoise_renders(
+        self, chroma: float, luma: float, scale: float, sharpen: float = 0.0, noise: float = 0.03, base=None
+    ) -> tuple:
         from negpy.domain.interfaces import PipelineContext
 
         rng = np.random.default_rng(11)
-        img = np.ascontiguousarray(np.clip(self.img + rng.normal(0, noise, self.img.shape).astype(np.float32), 1e-4, 1.0))
+        base = self.img if base is None else base
+        img = np.ascontiguousarray(np.clip(base + rng.normal(0, noise, base.shape).astype(np.float32), 1e-4, 1.0))
         s = replace(_make_base_settings(), lab=LabConfig(chroma_denoise=chroma, luma_denoise=luma, sharpen=sharpen))
         h, w = img.shape[:2]
         ctx = PipelineContext(original_size=(h, w), scale_factor=scale, process_mode=s.process.process_mode)
         cpu = np.asarray(self.cpu.process(img, s, f"parity_dn_{chroma}_{luma}_{scale}_{sharpen}", context=ctx))[..., :3]
         gpu_tex, _ = self.gpu.process_to_texture(img, s, scale_factor=scale, apply_layout=False, readback_metrics=False)
         return cpu.astype(np.float64), np.asarray(self.gpu._readback_downsampled(gpu_tex))[..., :3].astype(np.float64)
+
+    def test_chroma_denoise_colour_edge_band(self):
+        """The colour-edge band: an edge with a luma step falls back to the guided chroma, one without keeps a bilateral
+        cleaned chroma (cv2.bilateralFilter on a*/b*), and the same pass runs in both engines."""
+        h, w = self.img.shape[:2]
+        base = np.full((h, w, 3), 0.45, dtype=np.float32)
+        base[:, w // 2 :, :] = (0.62, 0.40, 0.30)  # luma and colour step down the middle
+        base[h // 2 :, : w // 2, :] = (0.30, 0.44, 0.40)  # near-isoluminant colour patch in the bottom-left corner
+        for strength in (1.0, 3.0):
+            for scale in (0.5, 1.0):
+                cpu, gpu = self._denoise_renders(strength, 0.0, scale, noise=0.01, base=base)
+                cpu_off, _ = self._denoise_renders(0.0, 0.0, scale, noise=0.01, base=base)
+                assert float(np.mean(np.abs(cpu - cpu_off) > 2e-3)) > 0.02, "a dead mirror would pass"
+                _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.001)
 
     def test_luma_denoise(self):
         """Both engines run the same self-guided filter on L* (box radius and eps from luma_guide_params)."""
@@ -554,10 +571,11 @@ class TestLabParity:
     def test_luma_denoise_with_chroma_denoise(self):
         """Chroma then luma, as PhotoLabProcessor orders them. The CPU filters the L* of the chroma-cleaned image and the
         GPU the L* of the pre-chroma input; they differ only where chroma denoise moves L* through gamut clipping, so the
-        synthetic noise is mild here (the full-size real-scan check agrees to under 1e-4) and a few edge pixels are allowed."""
+        synthetic noise is mild here (the full-size real-scan check agrees to under 1e-4, chroma and luma together) and the
+        saturated synthetic image is allowed a few percent of clipped pixels."""
         for scale in (0.5, 1.0):
             cpu, gpu = self._denoise_renders(2.0, 0.5, scale, noise=0.003)
-            _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.005)
+            _assert_mostly_close(cpu, gpu, atol=2e-3, rtol=2e-3, max_violation_frac=0.03)
 
     def test_luma_denoise_feeds_sharpening(self):
         """The CPU sharpens after luma denoise; the GPU's sharpen passes read a luma-denoised copy of the input."""
