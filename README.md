@@ -12,6 +12,16 @@
   [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/JySNzUWgwy)
 </div>
 
+> **Fork note (branch `plustek-8100-v2`).** Adds Plustek OpticFilm 8100 V2 scanning on top of upstream NegPy, tested on one unit only. Needs the patched driver: `pip install git+https://github.com/krixkrax615/pyopticfilm@plustek-8100-v2`.
+> - **Quality presets** in the Scan tab with SNR and time labels, plus Auto-exposure (per-frame metering), multi-sampling and a Raw (no sharpening) option
+> - **Scanner button** starts a scan; capture settings are saved in the TIFF description and shown in Frame Info
+> - **Auto HQ** preview (full resolution on zoom), deeper neighbour prefetch, faster rotate and frame switching
+> - **Reference view** with linked zoom/pan, and a bottom filmstrip (F6)
+>
+> Details are in `docs/USER_GUIDE.md`. Upstream: https://github.com/marcinz606/NegPy
+
+
+
 NegPy turns scans of film negatives and slides into finished pictures. I wrote it because I wanted a tool made for film scans that does more than invert them. It models film and photographic paper, and adds the conveniences of a lab scanner. It is written in Python and runs on Linux, macOS and Windows.
 
 ![NegPy main window](docs/media/0640.png)
