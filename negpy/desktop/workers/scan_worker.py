@@ -97,6 +97,7 @@ class ScanWorker(QObject):
     ejected = pyqtSignal(bool)
     eject_error = pyqtSignal(str)
     media_polled = pyqtSignal(str, object)  # device id; True, False, or None where the backend cannot tell
+    button_polled = pyqtSignal(str, bool)  # device id; whether a scanner button is held
     # Emitted after the operation's own error, so a listener that clears the frame state has the last word.
     strip_returned = pyqtSignal(bool)  # the strip is back in the holder
     roll_preview_ready = pyqtSignal(object)  # roll preview: one RollPreview per slot
@@ -499,6 +500,16 @@ class ScanWorker(QObject):
             logger.debug("Film poll of %s failed: %s", device_id, error)
             loaded = None
         self.media_polled.emit(device_id, loaded)
+
+    @pyqtSlot(str)
+    def poll_button(self, device_id: str) -> None:
+        """Whether a scanner button is held. Always emits button_polled, False if the poll failed."""
+        try:
+            pressed = bool(self._ensure_service().button_pressed(device_id))
+        except Exception as error:
+            logger.debug("Button poll of %s failed: %s", device_id, error)
+            pressed = False
+        self.button_polled.emit(device_id, pressed)
 
     @pyqtSlot(str)
     def eject(self, device_id: str) -> None:

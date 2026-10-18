@@ -82,10 +82,11 @@ def test_missing_metrics_fall_back_to_buffer_pixels():
     assert round(c.zoom_level, 6) == 2.0
 
 
-def _note(fit_scale, render_long_edge, original_res, zoom_level, hq):
+def _note(fit_scale, render_long_edge, original_res, zoom_level, hq, hq_active=None):
     c = _Canvas(fit_scale=fit_scale, render_long_edge=render_long_edge, original_res=original_res)
     c.zoom_level = zoom_level
     c.state.hq_preview = hq
+    c.state.hq_active = hq if hq_active is None else hq_active
     return c.zoom_note()
 
 
@@ -101,6 +102,11 @@ def test_note_is_silent_below_one_to_one():
 def test_note_is_silent_on_hq():
     """An interactive proxy frame renders small while HQ is on; the settled frame does not."""
     assert _note(0.25, 1600, (6000, 4000), 15.0, hq=True) == ""
+
+
+def test_note_flags_hq_loading_when_preview_is_on_but_not_settled():
+    """hq_preview on but hq_active off at 1:1+ reads as loading, not silent."""
+    assert _note(0.25, 1600, (6000, 4000), 15.0, hq=True, hq_active=False) == "preview res · HQ loading"
 
 
 def test_note_is_silent_when_the_source_fits_the_preview_budget():

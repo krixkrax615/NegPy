@@ -262,6 +262,7 @@ REGISTRY: dict[str, ShortcutEntry] = {
     "reset_panel_layout": ShortcutEntry("Ctrl+Shift+L", "Dock session and controls panels", "View"),
     "toggle_side_panels": ShortcutEntry("Shift+H", "Hide or show both side panels", "View"),
     "toggle_light_table": ShortcutEntry("Shift+G", "Light Table: the roll as a grid in place of the canvas", "View"),
+    "toggle_filmstrip": ShortcutEntry("F6", "Filmstrip: the roll as a row of thumbnails under the canvas", "View"),
     "toggle_reference": ShortcutEntry("Shift+R", "Reference view: pin this frame beside the canvas to match others to it", "View"),
     "edit_toolbar": ShortcutEntry("", "Edit the canvas toolbar (which controls it shows, in what order)", "View"),
     "tab_roll": ShortcutEntry("Ctrl+1", "Roll tab", "Tabs"),

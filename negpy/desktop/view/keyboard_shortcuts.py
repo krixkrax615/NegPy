@@ -599,6 +599,7 @@ class ShortcutManager:
             "command_palette": self.window.show_command_palette,
             "toggle_side_panels": self.window.toggle_side_panels,
             "toggle_reference": self.window.toggle_reference,
+            "toggle_filmstrip": self.window.toggle_filmstrip,
             "toggle_light_table": lambda: self.window.set_light_table(not self.window.light_table_active()),
             "show_analysis_help": self.window.right_panel.show_analysis_help,
             "check_for_updates": lambda: self.window.session_panel.check_for_updates(),

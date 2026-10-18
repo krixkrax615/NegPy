@@ -159,3 +159,27 @@ def test_the_profile_and_the_resolution_are_in_the_file(tmp_path) -> None:
         tags = tif.pages[0].tags
         assert bytes(tags["InterColorProfile"].value) == b"profile bytes"
         assert tags["XResolution"].value == (4000, 1)
+
+
+def test_capture_info_is_stored_in_the_image_description():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rgb = np.zeros((4, 4, 3), dtype=np.uint16)
+        result = ScanResult(rgb=rgb, ir=None, dpi=3600, device_model="x", capture_info="NegPy Plustek scan: 3600 dpi")
+        path = write_tiff_16bit(result, os.path.join(tmpdir, "info"))
+        with tifffile.TiffFile(path) as tf:
+            assert tf.pages[0].description == "NegPy Plustek scan: 3600 dpi"
+
+
+def test_read_capture_info_returns_only_negpy_lines():
+    from negpy.services.scanning.capture_info import read_capture_info
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rgb = np.zeros((4, 4, 3), dtype=np.uint16)
+        mine = write_tiff_16bit(
+            ScanResult(rgb=rgb, ir=None, dpi=3600, device_model="x", capture_info="NegPy Plustek scan: 3600 dpi"), os.path.join(tmpdir, "a")
+        )
+        other = write_tiff_16bit(ScanResult(rgb=rgb, ir=None, dpi=3600, device_model="x"), os.path.join(tmpdir, "b"))
+        assert read_capture_info(mine) == "NegPy Plustek scan: 3600 dpi"
+        assert read_capture_info(other) == ""
+        assert read_capture_info(os.path.join(tmpdir, "missing.tif")) == ""
+        assert read_capture_info("photo.jpg") == ""

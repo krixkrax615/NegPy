@@ -276,7 +276,7 @@ def test_backend_list_devices_maps_caps(monkeypatch):
     assert dev.capabilities.can_eject is False
     assert dev.capabilities.exposure_time_us is None
     assert dev.capabilities.ir_channel is True
-    assert dev.capabilities.auto_exposure is False
+    assert dev.capabilities.auto_exposure is True  # GL128: film metering before the scan
     assert dev.capabilities.autofocus is False
     assert dev.capabilities.prescan is True
     assert dev.capabilities.prescan_dpi == 1200
@@ -777,3 +777,98 @@ def test_backend_scan_refuses_while_session_held(monkeypatch):
             backend.scan(_DEVICE_ID, _params(), lambda *_: None, threading.Event())
     finally:
         session.close()
+
+
+def _button_scanner(monkeypatch, raw_value: int, *, read_error: Exception | None = None) -> MagicMock:
+    scanner = _fake_scanner()
+
+    def read_register(reg):
+        if read_error is not None:
+            raise read_error
+        return raw_value
+
+    scanner.asic.protocol.read_register.side_effect = read_register
+    monkeypatch.setattr(f"{_BACKEND}.Scanner.open", _FakeOpen(scanner))
+    return scanner
+
+
+@pytest.mark.parametrize("raw,pressed", [(0xFE, False), (0xF6, True), (0xBE, True), (0xB6, True)])
+def test_poll_button_register_bits(monkeypatch, raw, pressed):
+    """0x31 idles at 0xFE; a press clears bit 3 (0xF6) or bit 6 (0xBE)."""
+    _patch_enum(monkeypatch)
+    scanner = _button_scanner(monkeypatch, raw)
+    assert PlustekBackend().poll_button(_DEVICE_ID) is pressed
+    scanner.asic.protocol.read_register.assert_called_once_with(0x31)
+
+
+def test_poll_button_read_failure_returns_false(monkeypatch):
+    _patch_enum(monkeypatch)
+    _button_scanner(monkeypatch, 0xFE, read_error=UsbError("register read failed"))
+    assert PlustekBackend().poll_button(_DEVICE_ID) is False
+
+
+def test_poll_button_refuses_held_device_without_opening(monkeypatch):
+    _patch_enum(monkeypatch)
+    scanner = _fake_scanner()
+    open_mock = MagicMock(side_effect=lambda *a, **k: _FakeOpen(scanner)(*a, **k))
+    monkeypatch.setattr(f"{_BACKEND}.Scanner.open", open_mock)
+    backend = PlustekBackend()
+    backend._sessions[_DEVICE_ID] = object()
+    assert backend.poll_button(_DEVICE_ID) is False
+    open_mock.assert_not_called()
+
+
+def test_poll_button_refuses_when_lock_held_and_stays_held(monkeypatch):
+    _patch_enum(monkeypatch)
+    scanner = _fake_scanner()
+    open_mock = MagicMock(side_effect=lambda *a, **k: _FakeOpen(scanner)(*a, **k))
+    monkeypatch.setattr(f"{_BACKEND}.Scanner.open", open_mock)
+    backend = PlustekBackend()
+    assert backend._usb_lock.acquire(blocking=True)
+    try:
+        assert backend.poll_button(_DEVICE_ID) is False
+        open_mock.assert_not_called()
+        assert backend._usb_lock.locked()
+    finally:
+        backend._usb_lock.release()
+
+
+def test_poll_button_frees_lock_after_poll(monkeypatch):
+    _patch_enum(monkeypatch)
+    _button_scanner(monkeypatch, 0xF6)
+    backend = PlustekBackend()
+    assert backend.poll_button(_DEVICE_ID) is True
+    assert not backend._usb_lock.locked()
+
+
+def test_8100_v2_caps_report_button_scan(monkeypatch):
+    from pyopticfilm.device.model_8100_v2 import MODEL_8100_V2
+    from pyopticfilm.usb.device import PID_OPTICFILM_8100_V2
+
+    info = UsbDeviceInfo(
+        vendor_id=VID_PLUSTEK,
+        product_id=PID_OPTICFILM_8100_V2,
+        bus=6,
+        address=1,
+    )
+    _patch_enum(monkeypatch, [info])
+    monkeypatch.setattr(f"{_BACKEND}.model_for_device", lambda *_a, **_k: MODEL_8100_V2)
+    caps = PlustekBackend().list_devices()[0].capabilities
+    assert caps.button_scan is True
+
+
+def test_7600i_v1_caps_report_no_button_scan(monkeypatch):
+    from pyopticfilm.device.model_7600i_v1 import MODEL_7600I_V1
+    from pyopticfilm.usb.device import PID_OPTICFILM_7600I
+
+    info = UsbDeviceInfo(
+        vendor_id=VID_PLUSTEK,
+        product_id=PID_OPTICFILM_7600I,
+        bus=7,
+        address=2,
+        bcd_device=0x0400,
+    )
+    _patch_enum(monkeypatch, [info])
+    monkeypatch.setattr(f"{_BACKEND}.model_for_device", lambda *_a, **_k: MODEL_7600I_V1)
+    caps = PlustekBackend().list_devices()[0].capabilities
+    assert caps.button_scan is False

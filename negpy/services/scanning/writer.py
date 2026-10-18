@@ -65,6 +65,7 @@ def write_tiff_16bit(result: ScanResult, path: str, *, mono: bool = False) -> st
             compression="zlib",
             predictor=True,
             iccprofile=None if mono else result.icc_profile,
+            description=result.capture_info,
             **tags,
         )
         os.replace(tmp_path, path)

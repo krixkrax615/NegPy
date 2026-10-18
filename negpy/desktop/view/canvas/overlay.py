@@ -1930,7 +1930,7 @@ class CanvasOverlay(QWidget):
             x0, y0 = int(src.x()), int(src.y())
             x1, y1 = int(src.right()), int(src.bottom())
             acutance = loupe_acutance(host[y0:y1, x0:x1])
-        label = f"acutance {acutance:.1f} · {'full res' if self.state.hq_preview else 'preview res'}"
+        label = f"acutance {acutance:.1f} · {'full res' if self.state.hq_full_res else 'preview res'}"
 
         badge = QRectF(dest.center().x() - 96.0, dest.bottom() + 6.0, 192.0, _LOUPE_BADGE_H)
         painter.setBrush(QColor(0, 0, 0, 170))

@@ -2201,9 +2201,11 @@ def get_autocrop_coords(
     assist_luma: Optional[float] = None,
     mode: str = AutocropMode.IMAGE,
     rebate_trim: float = 1.0,
+    film_roi: Optional[ROI] = None,
 ) -> ROI:
     """
-    Detects film border via density thresholding.
+    Detects film border via density thresholding. `film_roi` is a box the caller already found on this
+    detection input (same `detect_res`), so it is not detected again.
 
     mode="film" crops to the film extent (rebate/sprockets kept);
     mode="image" refines inward to the exposed image area, by rebate_trim of the way
@@ -2211,7 +2213,8 @@ def get_autocrop_coords(
     """
     h, w = img.shape[:2]
     det, det_scale = _normalize_detection_input(img, detect_res)
-    film_roi = _detect_film_bounds(det)
+    if film_roi is None:
+        film_roi = _detect_film_bounds(det)
     from_contours = film_roi is not None
     if film_roi is None:
         film_roi = _get_threshold_autocrop_coords(det, assist_luma)
@@ -2284,6 +2287,26 @@ def meter_detection_key(geometry: GeometryConfig, shape: Tuple[int, ...]) -> str
     return f"{autocrop_detection_key(geometry)}|{w / h:.2f}"
 
 
+def is_pure_orientation(geometry: GeometryConfig) -> bool:
+    """True when the geometry only turns or flips the frame, with no fine rotation, distortion or keystone."""
+    return not (geometry.fine_rotation or geometry.distortion_k1 or geometry.converge_v or geometry.converge_h)
+
+
+def orient_rect(
+    rect: Tuple[float, float, float, float], rotation: int, flip_horizontal: bool, flip_vertical: bool
+) -> Tuple[float, float, float, float]:
+    """A normalized (x1, y1, x2, y2) rect found on the unturned frame, as it sits after quarter turns
+    (np.rot90 order) and flips. Border detection gives the same box on a turned frame, up to a detection pixel."""
+    x1, y1, x2, y2 = rect
+    for _ in range(rotation % 4):
+        x1, y1, x2, y2 = y1, 1.0 - x2, y2, 1.0 - x1
+    if flip_horizontal:
+        x1, x2 = 1.0 - x2, 1.0 - x1
+    if flip_vertical:
+        y1, y2 = 1.0 - y2, 1.0 - y1
+    return (x1, y1, x2, y2)
+
+
 def resolve_meter_rect(img: ImageBuffer, geometry: GeometryConfig, preview_size: float) -> Optional[Tuple[float, float, float, float]]:
     """The picture box the meters read on a frame with no crop: the rect Auto Crop would keep, when the film
     sits in an opaque holder or on bare light. None when the film fills the frame, which is metered whole."""
@@ -2324,8 +2347,11 @@ def resolve_autocrop_rect(
     rh, rw = tmp.shape[:2]
     if rh < 2 or rw < 2:
         return None
-    if require_film_box and _detect_film_bounds(_normalize_detection_input(tmp, AUTOCROP_DETECT_RES)[0]) is None:
-        return None
+    film_roi = None
+    if require_film_box:
+        film_roi = _detect_film_bounds(_normalize_detection_input(tmp, AUTOCROP_DETECT_RES)[0])
+        if film_roi is None:
+            return None
     y1, y2, x1, x2 = get_autocrop_coords(
         tmp,
         offset_px=0,
@@ -2335,6 +2361,7 @@ def resolve_autocrop_rect(
         target_ratio_str=geometry.autocrop_ratio,
         mode=geometry.autocrop_mode,
         rebate_trim=geometry.autocrop_rebate_trim,
+        film_roi=film_roi,
     )
     if y2 - y1 < 2 or x2 - x1 < 2:
         return None
