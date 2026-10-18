@@ -1,17 +1,10 @@
 import numpy as np
 import pytest
-from negpy.services.export.contact_sheet import PERF_RING, ContactSheetService, label_caps, palette_for
-from negpy.services.export.contact_sheet_edge import EdgeFamily, EdgeStyle
-from negpy.services.export.contact_sheet_layout import (
-    DEFAULT_PAPER,
-    FRAME_SIZES_120,
-    PERF_ACROSS,
-    PERF_FROM_EDGE,
-    SheetFormat,
-    film_geometry,
-    perforation_centers,
-    plan_sheets,
-)
+from negpy.services.export.contact_sheet import ContactSheetService, label_caps, palette_for
+from negpy.services.film_edge.paint import PERF_RING
+from negpy.services.film_edge.edge import EdgeFamily, EdgeStyle
+from negpy.services.export.contact_sheet_layout import DEFAULT_PAPER, plan_sheets
+from negpy.services.film_edge.geometry import FRAME_SIZES_120, PERF_ACROSS, PERF_FROM_EDGE, SheetFormat, film_geometry, perforation_centers
 from negpy.services.export.contact_sheet_roll import SheetLook
 
 DPI = 150

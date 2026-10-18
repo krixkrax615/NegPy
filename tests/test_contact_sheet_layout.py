@@ -4,28 +4,24 @@ import pytest
 
 from negpy.services.export.contact_sheet_layout import (
     DEFAULT_PAPER,
-    FRAME_SIZES_120,
     ILFORD_PAPERS,
     PAPER_MAX,
-    PERF_ALONG,
     SHEET_MARGIN,
     ContactSheetSettings,
-    SheetFormat,
     best_dpi,
     better_orientation,
     clamp_paper,
     cut_strips,
     dpi_allowed,
-    film_geometry,
     frame_turns,
     min_paper_size,
     paper_preset,
-    perforation_centers,
     plan_capacity,
     plan_sheets,
     sheet_pixels,
     snap_paper,
 )
+from negpy.services.film_edge.geometry import FRAME_SIZES_120, PERF_ALONG, SheetFormat, film_geometry, perforation_centers
 
 FULL = film_geometry(SheetFormat.FULL_FRAME)
 HALF = film_geometry(SheetFormat.HALF_FRAME)

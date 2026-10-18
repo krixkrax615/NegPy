@@ -13,14 +13,9 @@ from negpy.features.exposure.models import EXPOSURE_CONSTANTS
 from negpy.features.geometry.models import AspectRatio, AutocropMode
 from negpy.features.metadata.gear_models import FilmColorType, FilmStock
 from negpy.features.process.models import ProcessMode
-from negpy.services.export.contact_sheet_edge import EdgeFamily, EdgeStyle, ascii_upper, edge_family
-from negpy.services.export.contact_sheet_layout import (
-    DEFAULT_FRAME_120,
-    FRAME_SIZES_120,
-    FilmGeometry,
-    SheetFormat,
-    frame_turns,
-)
+from negpy.services.film_edge.edge import EdgeFamily, EdgeStyle, ascii_upper, edge_family
+from negpy.services.export.contact_sheet_layout import frame_turns
+from negpy.services.film_edge.geometry import DEFAULT_FRAME_120, FRAME_SIZES_120, FilmGeometry, SheetFormat
 
 
 @dataclass(frozen=True)

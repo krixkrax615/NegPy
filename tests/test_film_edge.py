@@ -1,4 +1,4 @@
-from negpy.services.export.contact_sheet_edge import (
+from negpy.services.film_edge.edge import (
     DX_MODULE,
     DX_START,
     Band,
@@ -12,7 +12,7 @@ from negpy.services.export.contact_sheet_edge import (
     edge_items,
     label_text,
 )
-from negpy.services.export.contact_sheet_layout import SheetFormat, film_geometry
+from negpy.services.film_edge.geometry import SheetFormat, film_geometry
 
 FULL = film_geometry(SheetFormat.FULL_FRAME)
 HALF = film_geometry(SheetFormat.HALF_FRAME)

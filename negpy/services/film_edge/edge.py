@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Optional, Sequence, Union
 
-from negpy.services.export.contact_sheet_layout import HALF_FRAME_PITCH, FilmGeometry, SheetFormat
+from negpy.services.film_edge.geometry import HALF_FRAME_PITCH, FilmGeometry, SheetFormat
 
 LABEL_PITCH_135 = HALF_FRAME_PITCH
 DX_MODULE = 0.406

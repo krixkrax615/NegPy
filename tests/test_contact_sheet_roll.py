@@ -12,8 +12,8 @@ from negpy.features.geometry.models import AspectRatio, AutocropMode
 from negpy.features.metadata.gear_models import FilmColorType, FilmStock
 from negpy.features.process.models import ProcessMode
 from negpy.services.export import contact_sheet_roll as roll
-from negpy.services.export.contact_sheet_edge import EdgeFamily
-from negpy.services.export.contact_sheet_layout import SheetFormat, film_geometry
+from negpy.services.film_edge.edge import EdgeFamily
+from negpy.services.film_edge.geometry import SheetFormat, film_geometry
 from negpy.services.export.contact_sheet_roll import (
     FrameFacts,
     SheetFrame,

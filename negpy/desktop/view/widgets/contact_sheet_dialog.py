@@ -28,23 +28,21 @@ from negpy.services.export.contact_sheet import ContactSheetService
 from negpy.services.export.contact_sheet_layout import (
     DEFAULT_PAPER,
     DPI_CHOICES,
-    FRAME_SIZES_120,
     ILFORD_PAPERS,
     PAPER_MAX,
     PAPER_MIN,
     ContactSheetSettings,
-    SheetFormat,
     SheetPlan,
     best_dpi,
     better_orientation,
     clamp_paper,
     dpi_allowed,
-    film_geometry,
     paper_preset,
     plan_capacity,
     plan_sheets,
     snap_paper,
 )
+from negpy.services.film_edge.geometry import FRAME_SIZES_120, SheetFormat, film_geometry
 from negpy.services.export.contact_sheet_roll import (
     SheetFrame,
     SheetLook,

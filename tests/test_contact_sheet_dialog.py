@@ -8,7 +8,8 @@ from PyQt6.QtWidgets import QApplication
 
 from negpy.desktop.view.widgets.contact_sheet_dialog import ContactSheetDialog
 from negpy.domain.models import WorkspaceConfig
-from negpy.services.export.contact_sheet_layout import DEFAULT_PAPER, ContactSheetSettings, SheetFormat
+from negpy.services.export.contact_sheet_layout import DEFAULT_PAPER, ContactSheetSettings
+from negpy.services.film_edge.geometry import SheetFormat
 from negpy.services.export.contact_sheet_roll import PROOF_GRADE, FrameFacts, SheetFrame, SheetLook, StraightProof, straight_proof_config
 
 

@@ -11,7 +11,8 @@ from PIL import Image
 from negpy.domain.models import ExportResolutionMode, WorkspaceConfig
 from negpy.desktop.workers.export import ContactSheetJob, ExportWorker
 from negpy.infrastructure.display.color_spaces import WORKING_COLOR_SPACE
-from negpy.services.export.contact_sheet_layout import ContactSheetSettings, SheetFormat
+from negpy.services.export.contact_sheet_layout import ContactSheetSettings
+from negpy.services.film_edge.geometry import SheetFormat
 from negpy.services.export.contact_sheet_roll import FrameFacts, SheetFrame, SheetLook
 from negpy.services.rendering.image_processor import ImageProcessor, _downsample_to_long_edge
 

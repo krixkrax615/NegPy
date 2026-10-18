@@ -30,14 +30,8 @@ from negpy.features.hdr.models import hdr_frame_paths
 from negpy.services.export.print import PrintService
 from negpy.services.export.templating import render_export_filename
 from negpy.services.export.contact_sheet import ContactSheetService
-from negpy.services.export.contact_sheet_layout import (
-    MM_PER_INCH,
-    ContactSheetSettings,
-    SheetFormat,
-    best_dpi,
-    film_geometry,
-    plan_sheets,
-)
+from negpy.services.export.contact_sheet_layout import MM_PER_INCH, ContactSheetSettings, best_dpi, plan_sheets
+from negpy.services.film_edge.geometry import SheetFormat, film_geometry
 from negpy.services.export.contact_sheet_roll import SheetFrame, SheetLook, tile_params, turns_for
 from negpy.services.export.encoders import encode_jpeg
 
