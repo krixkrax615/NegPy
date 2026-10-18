@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from negpy.services.export.contact_sheet import ContactSheetService, label_caps, palette_for
 from negpy.services.film_edge.paint import PERF_RING
-from negpy.services.film_edge.edge import EdgeFamily, EdgeStyle
+from negpy.services.film_edge.edge import EdgeStyle
 from negpy.services.export.contact_sheet_layout import DEFAULT_PAPER, plan_sheets
 from negpy.services.film_edge.geometry import FRAME_SIZES_120, PERF_ACROSS, PERF_FROM_EDGE, SheetFormat, film_geometry, perforation_centers
 from negpy.services.export.contact_sheet_roll import SheetLook
@@ -16,7 +16,7 @@ def _render(n=6, tiles=None, turns=None, look=None, geometry=FULL, label=False, 
     plan = plan_sheets(DEFAULT_PAPER.width, DEFAULT_PAPER.height, geometry, n, label=label)
     tiles = tiles if tiles is not None else [np.full((200, 300, 3), 128, np.uint8)] * n
     turns = turns if turns is not None else [0] * n
-    look = look or SheetLook("bw", 0, EdgeStyle(EdgeFamily.KODAK, "KODAK TRI-X 400", False))
+    look = look or SheetLook("bw", 0, EdgeStyle("kodak", "KODAK", "TRI-X 400", dx=False))
     return plan, ContactSheetService.render_sheet(plan, 0, tiles, turns, S, look, draft=draft)
 
 
@@ -109,7 +109,7 @@ def test_edge_print_prints_light_in_its_band():
 
 
 def test_dx_codes_print_in_the_bottom_band():
-    look = SheetLook("color", 0, EdgeStyle(EdgeFamily.KODAK, "KODAK PORTRA 400", True))
+    look = SheetLook("color", 0, EdgeStyle("kodak", "KODAK", "PORTRA 400", dx=True))
     plan, sheet = _render(look=look)
     strip = plan.pages[0].strips[0]
     x0 = _px(strip.x + FULL.frame_center(0) + 3)
@@ -119,7 +119,7 @@ def test_dx_codes_print_in_the_bottom_band():
 
 
 def test_label_prints_above_the_strips_in_the_edge_ink():
-    look = SheetLook("color", 0, EdgeStyle(EdgeFamily.KODAK, "KODAK GOLD 200", True), "ROLL 12 · Gold 200 · 2026-08-11")
+    look = SheetLook("color", 0, EdgeStyle("kodak", "KODAK", "GOLD 200", dx=True), "ROLL 12 · Gold 200 · 2026-08-11")
     plan, sheet = _render(look=look, label=True)
     _x, block_y, _w, _h = plan.pages[0].block
     band = sheet[_px(block_y - 8) : _px(block_y - 2), :].reshape(-1, 3)
@@ -132,7 +132,7 @@ def test_label_is_set_in_edge_print_capitals():
 
 
 def test_plain_film_leaves_the_edge_bands_empty():
-    look = SheetLook("bw", 0, EdgeStyle(EdgeFamily.KODAK, "KODAK TRI-X 400", False, printed=False))
+    look = SheetLook("bw", 0, EdgeStyle("kodak", "KODAK", "TRI-X 400", dx=False, printed=False))
     plan, sheet = _render(look=look)
     strip = plan.pages[0].strips[0]
     for top in (strip.y, strip.y + FULL.width - 2.0):
@@ -157,7 +157,7 @@ def test_120_has_no_perforations():
 
 
 def test_a_paper_film_base_prints_white_with_dark_ink_and_rings():
-    look = SheetLook("bw", 0, EdgeStyle(EdgeFamily.KODAK, "KODAK TRI-X 400", False), white_paper=True, film_base=False)
+    look = SheetLook("bw", 0, EdgeStyle("kodak", "KODAK", "TRI-X 400", dx=False), white_paper=True, film_base=False)
     pal = palette_for(look)
     assert pal.no_film == pal.rebate == (255, 255, 255)
     assert pal.ink == pal.label == (0, 0, 0)
@@ -197,7 +197,7 @@ def test_a_paper_film_base_keeps_the_strip_outline_and_a_draft_ring():
     assert draft[ring_y, int(round((strip.x + centers[3]) * draft_scale))].max() < 255
 
 
-_PAPER_LOOK = SheetLook("bw", 0, EdgeStyle(EdgeFamily.KODAK, "KODAK TRI-X 400", False), white_paper=True, film_base=False)
+_PAPER_LOOK = SheetLook("bw", 0, EdgeStyle("kodak", "KODAK", "TRI-X 400", dx=False), white_paper=True, film_base=False)
 _EVERY_FORMAT = [film_geometry(SheetFormat.FULL_FRAME), film_geometry(SheetFormat.HALF_FRAME)] + [
     film_geometry(SheetFormat.MEDIUM, size) for size in FRAME_SIZES_120
 ]
